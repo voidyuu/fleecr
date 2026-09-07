@@ -1,0 +1,11 @@
+.DS_Store
+build/
+build-rel/
+build-ios/
+design/
+HerdrM.xcodeproj/
+Sources/Info.plist
+*.xcuserstate
+**/xcuserdata/
+**/.build/
+**/.swiftpm/
