@@ -79,7 +79,7 @@ struct FleecrApp: App {
         .commands {
             // fleecr is a single-window console, so New Window is not available.
             CommandGroup(replacing: .newItem) {
-                Button("New Terminal") { focusedModel?.showNewTerminal = true }
+                Button("New Terminal") { focusedModel?.startNewTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
                     .disabled(focusedModel == nil)
                 if let model = focusedModel,

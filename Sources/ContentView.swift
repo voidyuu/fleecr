@@ -55,7 +55,6 @@ struct RootView: View {
         .frame(minWidth: 980, minHeight: 620)
         .onAppear { model.start() }
         .sheet(isPresented: $model.showAddDevice) { AddDeviceSheet(model: model) }
-        .sheet(isPresented: $model.showNewTerminal) { NewTerminalSheet(model: model) }
         .sheet(item: $model.spaceToRename) { entry in RenameSpaceSheet(model: model, entry: entry) }
         .sheet(item: $model.agentToRename) { entry in RenameAgentSheet(model: model, entry: entry) }
         .sheet(item: $model.deviceToEdit) { device in EditDeviceSheet(model: model, device: device) }
@@ -580,102 +579,6 @@ struct SheetSectionLabel: View {
             .font(.system(size: 10.5, weight: .medium))
             .kerning(0.4)
             .foregroundStyle(Theme.textTertiary)
-    }
-}
-
-struct NewTerminalSheet: View {
-    @ObservedObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var deviceID = Device.local.id
-    @State private var workspaceID = ""
-
-    private var chosenDevice: Device {
-        model.device(deviceID) ?? .local
-    }
-
-    private var spaces: [WorkspaceInfo] {
-        model.session(deviceID).workspaces
-    }
-
-    private var spaceLabel: String {
-        spaces.first { $0.workspaceID == workspaceID }?.label ?? String(localized: "a Herdr space")
-    }
-
-    private var subtitle: String {
-        return String(localized: "Creates a persistent shell in \(spaceLabel) on \(chosenDevice.name)")
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SheetHeader(
-                systemImage: "terminal",
-                title: String(localized: "New Terminal"),
-                subtitle: subtitle
-            )
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-
-            VStack(alignment: .leading, spacing: 8) {
-                if model.showsDeviceBadges {
-                    SheetSectionLabel("DEVICE")
-                    Picker("", selection: $deviceID) {
-                        ForEach(model.devices) { device in
-                            Text(device.name).tag(device.id)
-                        }
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-                    .onChange(of: deviceID) { _, _ in
-                        workspaceID = spaces.first?.workspaceID ?? ""
-                    }
-
-                    Spacer().frame(height: 8)
-                }
-
-                SheetSectionLabel("SPACE")
-                Picker("", selection: $workspaceID) {
-                    ForEach(spaces) { workspace in
-                        Text(workspace.label).tag(workspace.workspaceID)
-                    }
-                }
-                .labelsHidden()
-                .fixedSize()
-            }
-            .padding(16)
-
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Open Terminal") {
-                    model.startNewTerminal(device: chosenDevice, workspaceID: workspaceID)
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.accent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(workspaceID.isEmpty)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-        }
-        .frame(width: 420)
-        .onAppear {
-            deviceID = model.selectedSpace?.deviceID
-                ?? model.selectedAttachedEntry?.device.id
-                ?? model.deviceFilter
-                ?? model.devices.first?.id
-                ?? Device.local.id
-            let preferredSpace = model.selectedSpace?.deviceID == deviceID
-                ? model.selectedSpace?.workspaceID
-                : model.selectedAttachedEntry.flatMap {
-                    $0.device.id == deviceID ? $0.workspaceID : nil
-                }
-            workspaceID = preferredSpace.flatMap { preferred in
-                spaces.contains { $0.workspaceID == preferred } ? preferred : nil
-            } ?? spaces.first?.workspaceID ?? ""
-        }
     }
 }
 

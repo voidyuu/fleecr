@@ -74,7 +74,6 @@ final class AppModel: ObservableObject {
     @Published private(set) var unreadAgents: Set<AgentUnreadKey> = []
 
     @Published var showAddDevice = false
-    @Published var showNewTerminal = false
     @Published var showSearch = false
     @Published var shellSplitAxis: SplitAxis?
     /// Set by `reveal` when a jump lands while the ⌘D split is open, and consumed once the
@@ -278,28 +277,37 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Agents across the scope, filtered by selected space, in herdr tab order
-    /// (device → workspace → tab number) so sidebar drag matches the TUI.
-    var visibleAgents: [AgentEntry] {
-        var entries = devicesInScope.flatMap { device in
-            session(device.id).agents.map { agentEntry(device: device, agent: $0) }
+    /// The currently active space, determined from `selectedSpace`, the attached pane,
+    /// or the first visible space in scope.
+    var currentSpace: SpaceRef? {
+        if let space = selectedSpace,
+           devicesInScope.contains(where: { $0.id == space.deviceID }),
+           session(space.deviceID).workspaces.contains(where: { $0.workspaceID == space.workspaceID }) {
+            return space
         }
-        if let space = selectedSpace {
-            entries = entries.filter {
-                $0.device.id == space.deviceID && $0.agent.workspaceID == space.workspaceID
+        if let entry = selectedAttachedEntry,
+           devicesInScope.contains(where: { $0.id == entry.device.id }),
+           session(entry.device.id).workspaces.contains(where: { $0.workspaceID == entry.workspaceID }) {
+            return SpaceRef(deviceID: entry.device.id, workspaceID: entry.workspaceID)
+        }
+        if let space = visibleSpaces.first {
+            return space.ref
+        }
+        for device in devicesInScope {
+            if let workspace = session(device.id).workspaces.first {
+                return SpaceRef(deviceID: device.id, workspaceID: workspace.workspaceID)
             }
         }
-        let deviceRank = Dictionary(uniqueKeysWithValues: devicesInScope.enumerated().map { ($1.id, $0) })
-        return entries.sorted { lhs, rhs in
-            let d0 = deviceRank[lhs.device.id] ?? Int.max
-            let d1 = deviceRank[rhs.device.id] ?? Int.max
-            if d0 != d1 { return d0 < d1 }
-            let w0 = workspaceRank(deviceID: lhs.device.id, workspaceID: lhs.agent.workspaceID)
-            let w1 = workspaceRank(deviceID: rhs.device.id, workspaceID: rhs.agent.workspaceID)
-            if w0 != w1 { return w0 < w1 }
-            return tabRank(deviceID: lhs.device.id, tabID: lhs.agent.tabID)
-                < tabRank(deviceID: rhs.device.id, tabID: rhs.agent.tabID)
-        }
+        return nil
+    }
+
+    /// Agents in the selected space, in herdr tab order so sidebar drag matches the TUI.
+    var visibleAgents: [AgentEntry] {
+        guard let space = selectedSpace, let device = device(space.deviceID) else { return [] }
+        return session(space.deviceID).agents
+            .filter { $0.workspaceID == space.workspaceID }
+            .map { agentEntry(device: device, agent: $0) }
+            .sorted { tabRank(deviceID: space.deviceID, tabID: $0.agent.tabID) < tabRank(deviceID: space.deviceID, tabID: $1.agent.tabID) }
     }
 
     func terminalEntries(for device: Device) -> [TerminalEntry] {
@@ -317,13 +325,10 @@ final class AppModel: ObservableObject {
     }
 
     var visibleTerminals: [TerminalEntry] {
-        var entries = devicesInScope.flatMap { terminalEntries(for: $0) }
-        if let space = selectedSpace {
-            entries = entries.filter {
-                $0.device.id == space.deviceID && $0.pane.workspaceID == space.workspaceID
-            }
+        guard let space = selectedSpace, let device = device(space.deviceID) else { return [] }
+        return terminalEntries(for: device).filter {
+            $0.pane.workspaceID == space.workspaceID
         }
-        return entries
     }
 
     func isUnread(_ entry: AgentEntry) -> Bool {
@@ -344,23 +349,6 @@ final class AppModel: ObservableObject {
         })
     }
 
-    var scopeAttention: SpaceAttention {
-        SpaceAttention.rollup(devicesInScope.flatMap { device in
-            session(device.id).agents.map {
-                (
-                    status: $0.status,
-                    unreadDone: unreadAgents.contains(
-                        AgentUnreadKey(deviceID: device.id, paneID: $0.paneID)
-                    )
-                )
-            }
-        })
-    }
-
-    private func workspaceRank(deviceID: UUID, workspaceID: String) -> Int {
-        session(deviceID).workspaces.firstIndex { $0.workspaceID == workspaceID } ?? Int.max
-    }
-
     private func tabRank(deviceID: UUID, tabID: String) -> Int {
         session(deviceID).tabs.firstIndex { $0.tabID == tabID } ?? Int.max
     }
@@ -369,10 +357,6 @@ final class AppModel: ObservableObject {
         session(deviceID).tabs
             .filter { $0.workspaceID == workspaceID }
             .map(\.tabID)
-    }
-
-    var scopeAgentCount: Int {
-        devicesInScope.reduce(0) { $0 + session($1.id).agents.count }
     }
 
     var selectedEntry: AgentEntry? {
@@ -434,11 +418,10 @@ final class AppModel: ObservableObject {
 
     // MARK: - Selection
 
-    func selectSpace(_ ref: SpaceRef?) {
+    func selectSpace(_ ref: SpaceRef) {
         selectedSpace = ref
         if let entry = selectedAttachedEntry {
-            if ref == nil { return }
-            if entry.device.id == ref!.deviceID && entry.workspaceID == ref!.workspaceID { return }
+            if entry.device.id == ref.deviceID && entry.workspaceID == ref.workspaceID { return }
         }
         selectedPane = preferredVisibleAgent()?.ref ?? firstVisiblePaneRef
     }
@@ -446,7 +429,9 @@ final class AppModel: ObservableObject {
     func setDeviceFilter(_ id: UUID?) {
         deviceFilter = id
         if let id, let space = selectedSpace, space.deviceID != id {
-            selectedSpace = nil
+            selectedSpace = visibleSpaces.first?.ref
+        } else if selectedSpace == nil {
+            selectedSpace = visibleSpaces.first?.ref
         }
         if let id, let selected = selectedPane, selected.deviceID != id {
             selectedPane = preferredVisibleAgent()?.ref ?? firstVisiblePaneRef
@@ -470,7 +455,11 @@ final class AppModel: ObservableObject {
         if let filter = deviceFilter, filter != ref.deviceID {
             deviceFilter = nil
         }
-        selectedSpace = nil
+        let state = session(ref.deviceID)
+        if let workspaceID = state.agents.first(where: { $0.paneID == ref.paneID })?.workspaceID
+            ?? state.panes.first(where: { $0.paneID == ref.paneID })?.workspaceID {
+            selectedSpace = SpaceRef(deviceID: ref.deviceID, workspaceID: workspaceID)
+        }
         selectedPane = ref
         // Only the search sheet needs the deferred request: its dismissal restores the
         // parent window's previous responder after the view tree has asked for focus.
@@ -678,7 +667,9 @@ final class AppModel: ObservableObject {
         devices.removeAll { $0.id == device.id }
         store.save(devices)
         if deviceFilter == device.id { deviceFilter = nil }
-        if selectedSpace?.deviceID == device.id { selectedSpace = nil }
+        if selectedSpace?.deviceID == device.id {
+            selectedSpace = visibleSpaces.first(where: { $0.device.id != device.id })?.ref
+        }
         if selectedPane?.deviceID == device.id {
             selectedPane = preferredVisibleAgent()?.ref ?? firstVisiblePaneRef
         }
@@ -722,7 +713,6 @@ final class AppModel: ObservableObject {
             )
             sessions[deviceID]?.agents = snapshot.agents
             sessions[deviceID]?.workspaces = snapshot.workspaces
-            sessions[deviceID]?.workspaces = snapshot.workspaces
             sessions[deviceID]?.tabs = Self.orderedTabs(
                 snapshot.tabs ?? [],
                 workspaces: snapshot.workspaces
@@ -739,15 +729,22 @@ final class AppModel: ObservableObject {
                !snapshot.workspaces.contains(where: { $0.workspaceID == space.workspaceID }) {
                 selectedSpace = nil
             }
+            if selectedSpace == nil {
+                if let focusedWorkspaceID = snapshot.focusedWorkspaceID,
+                   snapshot.workspaces.contains(where: { $0.workspaceID == focusedWorkspaceID }) {
+                    selectedSpace = SpaceRef(deviceID: deviceID, workspaceID: focusedWorkspaceID)
+                } else {
+                    selectedSpace = visibleSpaces.first?.ref
+                }
+            }
             if selectedPane == nil {
                 if let focusedPaneID = snapshot.focusedPaneID,
                    paneIDs.contains(focusedPaneID),
                    deviceFilter == nil || deviceFilter == deviceID {
                     let focused = PaneRef(deviceID: deviceID, paneID: focusedPaneID)
-                    if selectedSpace == nil
-                        || selectedAttachedEntry.map({
-                            $0.ref == focused && $0.workspaceID == selectedSpace?.workspaceID
-                        }) == true {
+                    let focusedWorkspaceID = snapshot.panes?.first(where: { $0.paneID == focusedPaneID })?.workspaceID
+                        ?? snapshot.agents.first(where: { $0.paneID == focusedPaneID })?.workspaceID
+                    if selectedSpace == nil || (selectedSpace?.deviceID == deviceID && selectedSpace?.workspaceID == focusedWorkspaceID) {
                         selectedPane = focused
                     }
                 }
@@ -1106,6 +1103,15 @@ final class AppModel: ObservableObject {
                 actionError = actionErrorMessage(error, device: device)
             }
         }
+    }
+
+    /// Creates a persistent shell tab in the current space.
+    func startNewTerminal() {
+        guard let space = currentSpace, let device = device(space.deviceID) else {
+            actionError = String(localized: "Create a space on this device before opening a terminal.")
+            return
+        }
+        startNewTerminal(device: device, workspaceID: space.workspaceID)
     }
 
     /// Creates a persistent shell tab on the selected Herdr device. Local and

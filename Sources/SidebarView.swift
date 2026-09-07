@@ -48,7 +48,7 @@ struct SidebarView: View {
                 // Persistent Herdr terminals are listed under TERMINALS below;
                 // the ⌘D split beside an agent is separate.
                 actionRow(icon: "terminal", label: "New Terminal") {
-                    model.showNewTerminal = true
+                    model.startNewTerminal()
                 }
                 actionRow(icon: "magnifyingglass", label: "Search") {
                     model.showSearch = true
@@ -92,7 +92,6 @@ struct SidebarView: View {
                         .focusEffectDisabled()
                     }
                     if spacesExpanded {
-                        allSpacesRow
                         ForEach(model.visibleSpaces) { entry in
                             SpaceRowView(
                                 entry: entry,
@@ -219,30 +218,6 @@ struct SidebarView: View {
         .frame(height: 28)
     }
 
-    private var allSpacesRow: some View {
-        let selected = model.selectedSpace == nil
-        return Button {
-            model.selectSpace(nil)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "square.grid.2x2")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(selected ? Theme.textSecondary : Theme.textTertiary)
-                Text("All Spaces")
-                    .font(.system(size: 13))
-                    .foregroundStyle(selected ? Theme.text : Theme.textSecondary)
-                Spacer()
-                SpaceAttentionGlyph(attention: model.scopeAttention)
-                Text("\(model.scopeAgentCount)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textGhost)
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 30)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(SidebarRowButtonStyle(selected: selected))
-    }
 
     private func terminalRow(_ entry: AppModel.TerminalEntry) -> some View {
         let selected = model.selectedPane == entry.ref
