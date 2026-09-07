@@ -251,6 +251,18 @@ public struct SessionSnapshot: Codable, Sendable, Equatable {
         }
     }
 
+    /// The directory to use when adding work to a space. A selected pane wins;
+    /// otherwise use the space's active tab, then any pane still reporting one.
+    public func workspaceCWD(workspaceID: String, preferredPaneID: String? = nil) -> String? {
+        WorkspaceDirectory.currentPath(
+            workspaceID: workspaceID,
+            preferredPaneID: preferredPaneID,
+            workspaces: workspaces,
+            panes: panes ?? [],
+            agents: agents
+        )
+    }
+
     enum CodingKeys: String, CodingKey {
         case agents
         case workspaces
@@ -260,6 +272,53 @@ public struct SessionSnapshot: Codable, Sendable, Equatable {
         case focusedWorkspaceID = "focused_workspace_id"
         case version
         case protocolVersion = "protocol"
+    }
+}
+
+/// Resolves a space's live directory from the panes that belong to it. Herdr
+/// reports cwd per pane, so this deliberately follows a user's `cd` instead of
+/// treating the directory used to create the workspace as permanent.
+public enum WorkspaceDirectory {
+    public static func currentPath(
+        workspaceID: String,
+        preferredPaneID: String? = nil,
+        workspaces: [WorkspaceInfo],
+        panes: [PaneInfo],
+        agents: [AgentInfo]
+    ) -> String? {
+        func path(_ value: String?) -> String? {
+            guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
+            else { return nil }
+            return value
+        }
+
+        if let preferredPaneID {
+            if let cwd = path(panes.first { $0.paneID == preferredPaneID && $0.workspaceID == workspaceID }?.cwd) {
+                return cwd
+            }
+            if let cwd = path(agents.first { $0.paneID == preferredPaneID && $0.workspaceID == workspaceID }?.cwd) {
+                return cwd
+            }
+        }
+
+        let activeTabID = workspaces.first { $0.workspaceID == workspaceID }?.activeTabID
+        if let activeTabID {
+            if let cwd = path(panes.first { $0.workspaceID == workspaceID && $0.tabID == activeTabID }?.cwd) {
+                return cwd
+            }
+            if let cwd = path(agents.first { $0.workspaceID == workspaceID && $0.tabID == activeTabID }?.cwd) {
+                return cwd
+            }
+        }
+
+        return panes.lazy
+            .filter { $0.workspaceID == workspaceID }
+            .compactMap { path($0.cwd) }
+            .first
+            ?? agents.lazy
+                .filter { $0.workspaceID == workspaceID }
+                .compactMap { path($0.cwd) }
+                .first
     }
 }
 

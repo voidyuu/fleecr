@@ -463,6 +463,20 @@ final class AppModel: ObservableObject {
         session(deviceID).workspaces.first { $0.workspaceID == workspaceID }?.label ?? workspaceID
     }
 
+    /// A space follows the directory of its selected pane (or active tab), so
+    /// work created after `cd` starts in that new directory too.
+    private func workspaceCWD(deviceID: UUID, workspaceID: String) -> String? {
+        let state = session(deviceID)
+        let preferredPaneID = selectedPane?.deviceID == deviceID ? selectedPane?.paneID : nil
+        return WorkspaceDirectory.currentPath(
+            workspaceID: workspaceID,
+            preferredPaneID: preferredPaneID,
+            workspaces: state.workspaces,
+            panes: state.panes,
+            agents: state.agents
+        )
+    }
+
     /// Show device badges only when more than one device is configured.
     var showsDeviceBadges: Bool {
         devices.count > 1
@@ -1151,7 +1165,7 @@ final class AppModel: ObservableObject {
             do {
                 let paneID = try await service(for: device).createTab(
                     workspaceID: workspaceID,
-                    cwd: nil,
+                    cwd: workspaceCWD(deviceID: device.id, workspaceID: workspaceID),
                     label: nil
                 )
                 await refresh(device.id)
