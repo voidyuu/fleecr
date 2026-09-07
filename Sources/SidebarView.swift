@@ -53,9 +53,6 @@ struct SidebarView: View {
                 actionRow(icon: "terminal", label: "New Terminal") {
                     model.showNewTerminal = true
                 }
-                actionRow(icon: "folder", label: "Files") {
-                    model.openFileManager()
-                }
                 actionRow(icon: "magnifyingglass", label: "Search") {
                     model.showSearch = true
                 }
@@ -246,8 +243,7 @@ struct SidebarView: View {
     }
 
     private func terminalRow(_ entry: AppModel.TerminalEntry) -> some View {
-        let selected = !model.isFileManagerActive
-            && model.selectedPane == entry.ref
+        let selected = model.selectedPane == entry.ref
             && model.selectedShellID == nil
         return Button {
             model.selectAgent(entry.ref)
@@ -288,7 +284,7 @@ struct SidebarView: View {
     /// App-owned standalone shell (local login shell or plain ssh), outside
     /// any herdr space.
     private func shellRow(_ session: ShellSession) -> some View {
-        let selected = !model.isFileManagerActive && model.selectedShellID == session.id
+        let selected = model.selectedShellID == session.id
         return Button {
             model.selectShell(session.id)
         } label: {
@@ -326,8 +322,7 @@ struct SidebarView: View {
 
     var body: some View {
         let agent = entry.agent
-        let selected = !model.isFileManagerActive
-            && model.selectedPane == entry.ref
+        let selected = model.selectedPane == entry.ref
             && model.selectedShellID == nil
         let unread = model.isUnread(entry)
         VStack(alignment: .leading, spacing: 4) {
