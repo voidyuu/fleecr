@@ -7,10 +7,10 @@ gen:
 	xcodegen generate
 
 build: gen
-	xcodebuild -project HerdrM.xcodeproj -scheme HerdrM -configuration Debug -derivedDataPath build build -skipPackagePluginValidation CODE_SIGN_IDENTITY=$(CODE_SIGN_IDENTITY) CODE_SIGNING_REQUIRED=$(CODE_SIGNING_REQUIRED) | tail -5
+	xcodebuild -project fleecr.xcodeproj -scheme fleecr -configuration Debug -derivedDataPath build build -skipPackagePluginValidation CODE_SIGN_IDENTITY=$(CODE_SIGN_IDENTITY) CODE_SIGNING_REQUIRED=$(CODE_SIGNING_REQUIRED) | tail -5
 
 run: build
-	open build/Build/Products/Debug/herdrm.app
+	open build/Build/Products/Debug/fleecr.app
 
 kit-test:
 	cd Packages/HerdrKit && swift test
@@ -18,4 +18,4 @@ kit-test:
 test: kit-test
 
 clean:
-	rm -rf build build-rel HerdrM.xcodeproj Packages/*/.build
+	rm -rf build build-rel *.xcodeproj Packages/*/.build

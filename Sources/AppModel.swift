@@ -9,24 +9,6 @@ enum ConnectionState: Equatable {
     case failed(String)
 }
 
-/// Agent kinds offered by the picker. Local manifests are filtered through the
-/// login-shell search PATH; remote manifests stay server-owned.
-enum AgentCatalogState: Equatable {
-    case loading
-    case loaded(kinds: [String], paths: [String: String] = [:])
-    case failed(String)
-
-    var kinds: [String] {
-        guard case .loaded(let kinds, _) = self else { return [] }
-        return kinds
-    }
-
-    var paths: [String: String] {
-        guard case .loaded(_, let paths) = self else { return [:] }
-        return paths
-    }
-}
-
 /// Global pane identity: pane ids like "w1:p1" collide across devices.
 struct PaneRef: Hashable {
     let deviceID: UUID
@@ -45,7 +27,7 @@ struct DeviceSessionState {
     var workspaces: [WorkspaceInfo] = []
     var tabs: [TabInfo] = []
     var panes: [PaneInfo] = []
-    var agentCatalog: AgentCatalogState = .loading
+    var workspaceCWDs: [String: String] = [:]
     var attachmentCapabilities = AgentAttachmentCapabilityRegistry()
 }
 
@@ -62,42 +44,6 @@ enum SplitAxis { case vertical, horizontal }
 /// Identifies one of the two panes in the ⌘D split. Used for focus tracking and
 /// keyboard-driven resize.
 enum SplitSide { case agent, shell }
-
-/// A standalone local or SSH shell shown as its own sidebar entry — app-owned,
-/// outside any herdr space (unlike the persistent herdr terminals under
-/// TERMINALS) and not the ⌘D split.
-struct ShellSession: Identifiable, Equatable {
-    let id: UUID
-    var title: String
-    let device: Device
-}
-
-/// Per-kind CLI path overrides persisted in user defaults. Empty means automatic
-/// lookup on the login-shell search PATH. Invalid paths hide that kind until
-/// the user fixes or clears the field — they never silently fall back.
-enum AgentBinaryOverrides {
-    static let defaultsKey = "agent.binaryOverrides"
-
-    static func load(defaults: UserDefaults = .standard) -> [String: String] {
-        (defaults.dictionary(forKey: defaultsKey) as? [String: String] ?? [:])
-            .reduce(into: [:]) { result, entry in
-                let value = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !value.isEmpty { result[entry.key] = value }
-            }
-    }
-
-    static func save(_ overrides: [String: String], defaults: UserDefaults = .standard) {
-        let trimmed = overrides.reduce(into: [String: String]()) { result, entry in
-            let value = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !value.isEmpty { result[entry.key] = value }
-        }
-        if trimmed.isEmpty {
-            defaults.removeObject(forKey: defaultsKey)
-        } else {
-            defaults.set(trimmed, forKey: defaultsKey)
-        }
-    }
-}
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -128,9 +74,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var unreadAgents: Set<AgentUnreadKey> = []
 
     @Published var showAddDevice = false
-    @Published var showNewAgent = false
     @Published var showNewTerminal = false
-    @Published var showNewSpace = false
     @Published var showSearch = false
     @Published var shellSplitAxis: SplitAxis?
     /// Set by `reveal` when a jump lands while the ⌘D split is open, and consumed once the
@@ -153,10 +97,6 @@ final class AppModel: ObservableObject {
     /// Held weakly so the views are not kept alive by the model.
     weak var splitAgentView: LocalProcessTerminalView?
     weak var splitShellView: LocalProcessTerminalView?
-    /// Standalone terminals. Their views stay alive while deselected —
-    /// unlike agents, a local shell has no server side to reattach to.
-    @Published var shellSessions: [ShellSession] = []
-    @Published var selectedShellID: UUID?
     /// In-window device panel (NSPopover crashes in ViewBridge on macOS 26+ betas).
     @Published var showDevicePanel = false
     @Published var deviceToEdit: Device?
@@ -176,7 +116,10 @@ final class AppModel: ObservableObject {
 
     private let store = DeviceStore()
     private var services: [UUID: HerdrService] = [:]
+    private var pendingWorkspaceRenames: Set<String> = []
+    private var autoNamedWorkspaces: Set<String> = []
     private var sessionTasks: [UUID: Task<Void, Never>] = [:]
+    private var cwdPollTasks: [UUID: Task<Void, Never>] = [:]
     private var refreshDebounces: [UUID: Task<Void, Never>] = [:]
     private var previousStatuses: [UUID: [String: AgentStatus]] = [:]
 
@@ -483,9 +426,8 @@ final class AppModel: ObservableObject {
 
     /// Badges on sidebar/titlebar rows are scoped by the device filter: with a
     /// single device selected every row belongs to it, so the badge says
-    /// nothing. ⌘K search and the New Agent/Space device pickers stay on
-    /// `showsDeviceBadges` — search crosses all devices regardless of the
-    /// filter, and the pickers must stay reachable while filtered.
+    /// nothing. ⌘K search and the New Space picker stay on `showsDeviceBadges`
+    /// because search crosses all devices regardless of the filter.
     var showsRowDeviceBadges: Bool {
         devices.count > 1 && deviceFilter == nil
     }
@@ -494,7 +436,6 @@ final class AppModel: ObservableObject {
 
     func selectSpace(_ ref: SpaceRef?) {
         selectedSpace = ref
-        selectedShellID = nil
         if let entry = selectedAttachedEntry {
             if ref == nil { return }
             if entry.device.id == ref!.deviceID && entry.workspaceID == ref!.workspaceID { return }
@@ -531,7 +472,6 @@ final class AppModel: ObservableObject {
         }
         selectedSpace = nil
         selectedPane = ref
-        selectedShellID = nil
         // Only the search sheet needs the deferred request: its dismissal restores the
         // parent window's previous responder after the view tree has asked for focus.
         // `showSearch` is still true here — SearchView calls this before dismissing.
@@ -544,41 +484,8 @@ final class AppModel: ObservableObject {
         if shellSplitAxis != nil, showSearch { pendingSplitAgentFocus = true }
     }
 
-    // MARK: - Shell terminals
-
-
     func selectAgent(_ ref: PaneRef) {
         selectedPane = ref
-        selectedShellID = nil
-    }
-
-    var selectedShell: ShellSession? {
-        selectedShellID.flatMap { id in shellSessions.first { $0.id == id } }
-    }
-
-    /// Every click opens another terminal, like New Agent opens another agent.
-    func newShellSession(on device: Device) {
-        let n = shellSessions.count + 1
-        let session = ShellSession(
-            id: UUID(),
-            title: String(localized: "Terminal \(n)"),
-            device: device
-        )
-        shellSessions.append(session)
-        selectShell(session.id)
-    }
-
-    func selectShell(_ id: UUID) {
-        selectedShellID = id
-        ShellViewRegistry.focus(id)
-    }
-
-    func closeShellSession(_ id: UUID) {
-        shellSessions.removeAll { $0.id == id }
-        if selectedShellID == id {
-            selectedShellID = shellSessions.last?.id
-            if let remaining = selectedShellID { ShellViewRegistry.focus(remaining) }
-        }
     }
 
     // MARK: - Lifecycle
@@ -586,8 +493,8 @@ final class AppModel: ObservableObject {
     func start() {
         NotificationManager.shared.setup(model: self)
         // Finder-launched apps have launchd's PATH. Capture the login +
-        // interactive shell environment on a background thread once; New Agent
-        // lookup, herdr spawn, and terminal attach all read the same snapshot.
+        // interactive shell environment on a background thread once; terminal
+        // attach reads the same snapshot.
         Task.detached(priority: .utility) {
             _ = await ShellEnvironment.ensure()
         }
@@ -625,12 +532,24 @@ final class AppModel: ObservableObject {
                         self.probeOSIfNeeded(current)
                     }
                     await self.refresh(device.id)
-                    await self.loadAgentCatalog(deviceID: device.id, using: service)
+                    await self.loadAttachmentCapabilities(deviceID: device.id, using: service)
+                    self.cwdPollTasks[device.id]?.cancel()
+                    self.cwdPollTasks[device.id] = Task { @MainActor [weak self] in
+                        while !Task.isCancelled {
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            guard !Task.isCancelled else { return }
+                            await self?.refresh(device.id)
+                        }
+                    }
                     let stream = try await service.events()
                     for try await _ in stream {
                         self.scheduleRefresh(device.id)
                     }
+                    self.cwdPollTasks[device.id]?.cancel()
+                    self.cwdPollTasks[device.id] = nil
                 } catch {
+                    self.cwdPollTasks[device.id]?.cancel()
+                    self.cwdPollTasks[device.id] = nil
                     self.sessions[device.id]?.connection = .failed(error.localizedDescription)
                     if let target = device.sshTarget, Self.isSSHAuthenticationFailure(error) {
                         self.sshAuthenticationRequest = SSHAuthenticationRequest(
@@ -647,38 +566,15 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Locally, keeps only advertised CLIs whose binaries are on the login-shell
-    /// search PATH (or a Settings override). SSH hosts keep their server-owned
-    /// catalog; `agent.start` validates in the target pane instead. Manifests
-    /// also feed the attachment-capability registry (paste path vs upload).
-    private func loadAgentCatalog(deviceID: UUID, using service: HerdrService) async {
-        sessions[deviceID]?.agentCatalog = .loading
+    /// Manifests feed the attachment-capability registry (paste path vs upload).
+    private func loadAttachmentCapabilities(deviceID: UUID, using service: HerdrService) async {
         do {
             let manifests = try await service.agentManifests()
             sessions[deviceID]?.attachmentCapabilities =
                 AgentAttachmentCapabilityRegistry(manifests: manifests)
-            let advertised = manifests.map(\.agent)
-            if device(deviceID)?.isLocal == true {
-                let found = await service.installedAgents(
-                    from: advertised,
-                    overrides: AgentBinaryOverrides.load()
-                )
-                sessions[deviceID]?.agentCatalog = .loaded(
-                    kinds: found.map(\.kind),
-                    paths: Dictionary(uniqueKeysWithValues: found.map { ($0.kind, $0.path) })
-                )
-            } else {
-                sessions[deviceID]?.agentCatalog = .loaded(kinds: advertised)
-            }
         } catch {
-            sessions[deviceID]?.agentCatalog = .failed(error.localizedDescription)
+            sessions[deviceID]?.attachmentCapabilities = AgentAttachmentCapabilityRegistry()
         }
-    }
-
-    func reloadAgentCatalog(deviceID: UUID) {
-        guard let device = device(deviceID) else { return }
-        let service = service(for: device)
-        Task { await loadAgentCatalog(deviceID: deviceID, using: service) }
     }
 
     /// Tears down every live tunnel. Awaited from the app's terminate hook — `stopSession`
@@ -688,6 +584,8 @@ final class AppModel: ObservableObject {
         services.removeAll()
         sessionTasks.values.forEach { $0.cancel() }
         sessionTasks.removeAll()
+        cwdPollTasks.values.forEach { $0.cancel() }
+        cwdPollTasks.removeAll()
         for service in live.values {
             await service.disconnect()
         }
@@ -696,6 +594,8 @@ final class AppModel: ObservableObject {
     private func stopSession(_ id: UUID) {
         sessionTasks[id]?.cancel()
         sessionTasks[id] = nil
+        cwdPollTasks[id]?.cancel()
+        cwdPollTasks[id] = nil
         refreshDebounces[id]?.cancel()
         refreshDebounces[id] = nil
         previousStatuses[id] = nil
@@ -790,6 +690,20 @@ final class AppModel: ObservableObject {
         guard let device = device(deviceID), let service = services[deviceID] else { return }
         do {
             let snapshot = try await service.snapshot()
+            let previousWorkspaces = sessions[deviceID]?.workspaces ?? []
+            let previousCWDs = sessions[deviceID]?.workspaceCWDs ?? [:]
+            let workspaceCWDs: [String: String] = Dictionary(uniqueKeysWithValues: snapshot.workspaces.compactMap { workspace in
+                guard let cwd = snapshot.workspaceCWD(workspaceID: workspace.workspaceID) else { return nil }
+                return (workspace.workspaceID, cwd)
+            })
+            syncWorkspaceNames(
+                deviceID: deviceID,
+                service: service,
+                workspaces: snapshot.workspaces,
+                previousWorkspaces: previousWorkspaces,
+                previousCWDs: previousCWDs,
+                currentCWDs: workspaceCWDs
+            )
             unreadAgents = AgentUnread.applying(
                 previous: previousStatuses[deviceID] ?? [:],
                 agents: snapshot.agents,
@@ -814,6 +728,7 @@ final class AppModel: ObservableObject {
                 workspaces: snapshot.workspaces
             )
             sessions[deviceID]?.panes = snapshot.ordinaryTerminalPanes
+            sessions[deviceID]?.workspaceCWDs = workspaceCWDs
             let paneIDs = Set((snapshot.panes ?? []).map(\.paneID))
                 .union(snapshot.agents.map(\.paneID))
             if let selected = selectedPane, selected.deviceID == deviceID,
@@ -842,6 +757,49 @@ final class AppModel: ObservableObject {
             }
         } catch {
             sessions[deviceID]?.connection = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Default space names follow the first terminal's cwd; an explicitly
+    /// renamed space remains untouched once its label no longer matches the
+    /// previous directory name.
+    private func syncWorkspaceNames(
+        deviceID: UUID,
+        service: HerdrService,
+        workspaces: [WorkspaceInfo],
+        previousWorkspaces: [WorkspaceInfo],
+        previousCWDs: [String: String],
+        currentCWDs: [String: String]
+    ) {
+        let previousLabels = Dictionary(uniqueKeysWithValues: previousWorkspaces.map { ($0.workspaceID, $0.label) })
+        for workspace in workspaces {
+            guard let cwd = currentCWDs[workspace.workspaceID] else { continue }
+            let name = URL(fileURLWithPath: cwd).lastPathComponent
+            guard !name.isEmpty, name != "/", name != workspace.label else { continue }
+            let oldName = previousCWDs[workspace.workspaceID].map {
+                URL(fileURLWithPath: $0).lastPathComponent
+            }
+            let defaultLabels = [
+                "Space \(workspace.number)",
+                "Workspace \(workspace.number)",
+                String(workspace.number)
+            ]
+            let key = "\(deviceID.uuidString):\(workspace.workspaceID)"
+            let followsDirectory = oldName != nil && previousLabels[workspace.workspaceID] == oldName
+            guard autoNamedWorkspaces.contains(key)
+                || defaultLabels.contains(workspace.label)
+                || followsDirectory else { continue }
+            guard pendingWorkspaceRenames.insert(key).inserted else { continue }
+            Task { [weak self] in
+                do {
+                    try await service.renameWorkspace(workspaceID: workspace.workspaceID, label: name)
+                    self?.autoNamedWorkspaces.insert(key)
+                    self?.pendingWorkspaceRenames.remove(key)
+                    await self?.refresh(deviceID)
+                } catch {
+                    self?.pendingWorkspaceRenames.remove(key)
+                }
+            }
         }
     }
 
@@ -980,6 +938,7 @@ final class AppModel: ObservableObject {
     func renameSpace(_ entry: SpaceEntry, label: String) {
         let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !label.isEmpty, label != entry.workspace.label else { return }
+        autoNamedWorkspaces.remove("\(entry.device.id.uuidString):\(entry.workspace.workspaceID)")
         Task {
             do {
                 try await service(for: entry.device).renameWorkspace(
@@ -1123,25 +1082,26 @@ final class AppModel: ObservableObject {
         return result
     }
 
-    /// Creates a workspace rooted at the given directory ("~" expands to the device's
-    /// home, local or remote), then goes straight into the New Agent sheet for it.
-    func createNewSpace(device: Device, directory: String, label: String?) {
+    /// Creates a default Herdr space, whose root pane is its initial terminal.
+    func createNewSpace(on device: Device) {
         Task {
             do {
                 let service = service(for: device)
-                var path = directory.trimmingCharacters(in: .whitespaces)
-                // The browser leaves paths slash-terminated; herdr wants them bare.
-                while path.count > 1 && path.hasSuffix("/") { path.removeLast() }
-                if path.isEmpty { path = "~" }
-                path = try await service.absolutePath(path)
-                let trimmedLabel = label?.trimmingCharacters(in: .whitespaces)
-                let created = try await service.createWorkspace(
-                    label: (trimmedLabel?.isEmpty ?? true) ? nil : trimmedLabel,
-                    cwd: path
-                )
+                let created = try await service.createWorkspace(label: nil, cwd: nil)
+                autoNamedWorkspaces.insert("\(device.id.uuidString):\(created.workspaceID)")
+                let paneID: String
+                if let rootPaneID = created.rootPaneID {
+                    paneID = rootPaneID
+                } else {
+                    paneID = try await service.createTab(
+                        workspaceID: created.workspaceID,
+                        cwd: nil,
+                        label: nil
+                    )
+                }
                 await refresh(device.id)
                 selectedSpace = SpaceRef(deviceID: device.id, workspaceID: created.workspaceID)
-                showNewAgent = true
+                selectedPane = PaneRef(deviceID: device.id, paneID: paneID)
             } catch {
                 actionError = actionErrorMessage(error, device: device)
             }
@@ -1162,55 +1122,10 @@ final class AppModel: ObservableObject {
                 await refresh(device.id)
                 selectedSpace = SpaceRef(deviceID: device.id, workspaceID: workspaceID)
                 selectedPane = PaneRef(deviceID: device.id, paneID: paneID)
-                selectedShellID = nil
             } catch {
                 actionError = actionErrorMessage(error, device: device)
             }
         }
     }
 
-    /// New Agent: a fresh tab in the space plus agent.start. Agent names are
-    /// session-global in herdr, so collisions retry with a unique suffix.
-    /// `bypass` appends the kind's skip-permissions flag when one is known.
-    func startNewAgent(
-        device: Device,
-        kind: String,
-        workspaceID: String?,
-        bypass: Bool
-    ) {
-        let args = bypass ? (HerdrService.bypassFlags(for: kind) ?? []) : []
-        Task {
-            let service = service(for: device)
-            var createdPane: String?
-            do {
-                let pane = try await service.createTab(workspaceID: workspaceID, cwd: nil, label: kind)
-                createdPane = pane
-                do {
-                    try await service.startAgent(
-                        name: kind,
-                        kind: kind,
-                        paneID: pane,
-                        args: args,
-                        waitForShell: true
-                    )
-                } catch HerdrError.rpc(let code, _) where code == "agent_name_taken" {
-                    let suffix = String(UUID().uuidString.prefix(4)).lowercased()
-                    try await service.startAgent(
-                        name: "\(kind)-\(suffix)",
-                        kind: kind,
-                        paneID: pane,
-                        args: args,
-                        waitForShell: true
-                    )
-                }
-                await refresh(device.id)
-                selectedPane = PaneRef(deviceID: device.id, paneID: pane)
-            } catch {
-                if let createdPane {
-                    try? await service.closePane(paneID: createdPane)
-                }
-                actionError = actionErrorMessage(error, device: device)
-            }
-        }
-    }
 }

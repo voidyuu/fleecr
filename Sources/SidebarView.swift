@@ -45,11 +45,8 @@ struct SidebarView: View {
             Spacer().frame(height: 8)
 
             VStack(spacing: 1) {
-                actionRow(icon: "square.and.pencil", label: "New Agent") {
-                    model.showNewAgent = true
-                }
-                // Terminals — herdr-owned or standalone — are listed under
-                // TERMINALS below; the ⌘D split beside an agent is separate.
+                // Persistent Herdr terminals are listed under TERMINALS below;
+                // the ⌘D split beside an agent is separate.
                 actionRow(icon: "terminal", label: "New Terminal") {
                     model.showNewTerminal = true
                 }
@@ -65,17 +62,30 @@ struct SidebarView: View {
                 VStack(spacing: 1) {
                     // Title + chevron used to be a decorative HStack with no
                     // tap target, so the chevron promised a disclosure that
-                    // never fired. Trailing New Space stays a sibling Button
-                    // so it does not toggle the section.
+                    // never fired. The trailing menu does not toggle the section.
                     groupHeader("Spaces", expanded: $spacesExpanded) {
-                        Button {
-                            model.showNewSpace = true
-                        } label: {
-                            Image(systemName: "folder.badge.plus")
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(Theme.textGhost)
-                                .frame(width: 20, height: 20)
-                                .contentShape(Rectangle())
+                        Group {
+                            if let deviceID = model.deviceFilter, let device = model.device(deviceID) {
+                                Button { model.createNewSpace(on: device) } label: {
+                                    Image(systemName: "folder.badge.plus")
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(Theme.textGhost)
+                                        .frame(width: 20, height: 20)
+                                        .contentShape(Rectangle())
+                                }
+                            } else {
+                                Menu {
+                                    ForEach(model.devices) { device in
+                                        Button(device.name) { model.createNewSpace(on: device) }
+                                    }
+                                } label: {
+                                    Image(systemName: "folder.badge.plus")
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(Theme.textGhost)
+                                        .frame(width: 20, height: 20)
+                                        .contentShape(Rectangle())
+                                }
+                            }
                         }
                         .buttonStyle(.plain)
                         .help("New Space")
@@ -114,7 +124,7 @@ struct SidebarView: View {
                         }
                     }
 
-                    if !model.visibleTerminals.isEmpty || !model.shellSessions.isEmpty {
+                    if !model.visibleTerminals.isEmpty {
                         Spacer().frame(height: 10)
                         groupHeader("Terminals", expanded: $terminalsExpanded)
                         if terminalsExpanded {
@@ -123,14 +133,6 @@ struct SidebarView: View {
                                     .contextMenu {
                                         Button("Close Terminal…", role: .destructive) {
                                             model.requestClosePane(entry.ref, name: entry.title)
-                                        }
-                                    }
-                            }
-                            ForEach(model.shellSessions) { session in
-                                shellRow(session)
-                                    .contextMenu {
-                                        Button("Close Terminal", role: .destructive) {
-                                            model.closeShellSession(session.id)
                                         }
                                     }
                             }
@@ -175,7 +177,7 @@ struct SidebarView: View {
         }
         .buttonStyle(SidebarRowButtonStyle())
         // CSS `outline: none` is not a SwiftUI concept. This is the native
-        // equivalent for chrome (New Agent / New Terminal / Search). List
+        // equivalent for chrome (New Terminal / Search). List
         // rows keep their focus ring for keyboard access.
         .focusEffectDisabled()
     }
@@ -244,7 +246,6 @@ struct SidebarView: View {
 
     private func terminalRow(_ entry: AppModel.TerminalEntry) -> some View {
         let selected = model.selectedPane == entry.ref
-            && model.selectedShellID == nil
         return Button {
             model.selectAgent(entry.ref)
         } label: {
@@ -281,34 +282,6 @@ struct SidebarView: View {
         .buttonStyle(SidebarRowButtonStyle(selected: selected))
     }
 
-    /// App-owned standalone shell (local login shell or plain ssh), outside
-    /// any herdr space.
-    private func shellRow(_ session: ShellSession) -> some View {
-        let selected = model.selectedShellID == session.id
-        return Button {
-            model.selectShell(session.id)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "terminal")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textTertiary)
-                Text(session.title)
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                Text(session.device.name)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textGhost)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .frame(height: 34)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(SidebarRowButtonStyle(selected: selected))
-    }
-
     private func deviceBadge(_ device: Device) -> some View {
         DeviceChip(device: device)
     }
@@ -323,7 +296,6 @@ struct SidebarView: View {
     var body: some View {
         let agent = entry.agent
         let selected = model.selectedPane == entry.ref
-            && model.selectedShellID == nil
         let unread = model.isUnread(entry)
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {

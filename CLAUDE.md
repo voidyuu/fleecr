@@ -1,4 +1,4 @@
-# herdrm — HerdrM
+# fleecr
 
 Native macOS console for [herdr](https://herdr.dev) (the terminal workspace manager for
 coding agents). Sidebar lists Spaces (herdr workspaces) and Agents; the bottom-left
@@ -13,14 +13,14 @@ Design canvas (waku-style sidebar, light/dark): `design/` — published as the
 - `Packages/HerdrKit` — SPM library: NDJSON-over-Unix-socket RPC
   (`SocketRPC`), models, `Device`/`DeviceStore` (persisted to
   `~/Library/Application Support/HerdrM/devices.json`), `SSHTunnel` (OpenSSH forward),
-  `HerdrService` facade, `ShellEnvironment`, `LocalServer`, `DeviceFileService`, `SSHCredentialStore`.
+  `HerdrService` facade, `ShellEnvironment`, `LocalServer`, `SSHCredentialStore`.
 - `Sources` — macOS SwiftUI app (XcodeGen `project.yml`), Ghostty (`libghostty` / `GhosttyTerminal`) embed.
 - `design/` — design canvas working files (`*.dc.html` artboards + `canvas.json`).
 
 ## Build & test
 
 ```sh
-make build      # xcodegen + xcodebuild → build/Build/Products/Debug/HerdrM.app
+make build      # xcodegen + xcodebuild → build/Build/Products/Debug/fleecr.app
 make run
 make kit-test   # HerdrKit integration tests (need a running local herdr)
 HERDRM_E2E_SSH_TARGET=vincent@10.10.10.87 make kit-test   # + remote SSH E2E
@@ -33,16 +33,12 @@ the Makefile passes it.
 
 Repo: github.com/missuo/herdrm. Push a `v*` tag → `.github/workflows/release.yml`
 builds Release (Developer ID: MOE AI LLC, hardened runtime), notarizes via
-notarytool, staples, Sparkle-signs the zip, generates `appcast.xml`, and
-publishes both as a GitHub release. Secrets: MACOS_CERTIFICATE_P12/_PASSWORD,
-APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD, SPARKLE_PRIVATE_KEY (EdDSA private
-key also lives in the local login Keychain; public key is pinned in project.yml).
-Sparkle feed: the release asset `appcast.xml` at `releases/latest/download/`.
+notarytool, staples, and publishes the zip as a GitHub release. Secrets:
+MACOS_CERTIFICATE_P12/_PASSWORD, APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD.
 Versioning: MARKETING_VERSION from the tag, CFBundleVersion = CI run number.
 CHANGELOG.md is mandatory: CI extracts the `## [x.y.z]` section for the GitHub
-release notes and the Sparkle update description, and fails if it's missing —
-add the section before tagging. The cask in OwO-Network/homebrew-brew is
-auto-bumped after each release.
+release notes, and fails if it's missing — add the section before tagging. The
+cask in OwO-Network/homebrew-brew is auto-bumped after each release.
 
 ## herdr protocol notes (0.8.0, protocol 19; verified against the live socket)
 

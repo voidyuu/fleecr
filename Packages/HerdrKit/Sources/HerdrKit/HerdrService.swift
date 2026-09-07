@@ -554,43 +554,6 @@ public actor HerdrService {
 
     // MARK: - Terminal attach
 
-    /// The command for a standalone interactive shell on this device.
-    public nonisolated func terminalCommand() -> TerminalCommand {
-        switch device.kind {
-        case .local:
-            return TerminalCommand(
-                executable: "/bin/sh",
-                args: ["-c", "cd \"$HOME\"; exec \"${SHELL:-/bin/zsh}\" -l"],
-                environment: [:],
-                authorizationID: nil
-            )
-        case .ssh(let target):
-            let authentication = SSHTunnel.authenticationConfiguration(for: device.id)
-            // Same seeding as the remote attach: SwiftTerm's child gets a sparse
-            // environment, and OpenSSH needs the user's PATH (Match exec) and
-            // SSH_AUTH_SOCK (agent identities). Authentication values win.
-            var environment = (ShellEnvironment.cached ?? .empty).launchEnvironment(binary: nil)
-            environment.merge(authentication.environment) { _, authenticationValue in
-                authenticationValue
-            }
-            environment.removeValue(forKey: "TERM")
-            environment.removeValue(forKey: "COLUMNS")
-            environment.removeValue(forKey: "LINES")
-            return TerminalCommand(
-                executable: "/usr/bin/ssh",
-                args: ["-tt"] + authentication.arguments + [
-                    "-o", "StrictHostKeyChecking=accept-new",
-                    "-o", "ConnectTimeout=10",
-                    "-o", "ServerAliveInterval=15",
-                    "-o", "ServerAliveCountMax=3",
-                    SSHTunnel.sshDestination(target),
-                ],
-                environment: environment,
-                authorizationID: authentication.authorizationID
-            )
-        }
-    }
-
     /// Shell fragment that picks the herdr binary to attach with. herdr's attach
     /// stream requires the CLI and server protocol versions to match exactly, so
     /// when several herdr binaries share the PATH (a stale copy in ~/.local/bin

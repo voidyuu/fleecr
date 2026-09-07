@@ -1,4 +1,4 @@
-name: HerdrM
+name: fleecr
 options:
   bundleIdPrefix: dev.bybee
   deploymentTarget:
@@ -13,11 +13,8 @@ packages:
     path: Packages/HerdrKit
   GhosttyTerminal:
     path: Packages/GhosttyTerminal
-  Sparkle:
-    url: https://github.com/sparkle-project/Sparkle
-    from: "2.9.6"
 targets:
-  HerdrM:
+  fleecr:
     type: application
     platform: macOS
     sources:
@@ -33,12 +30,11 @@ targets:
         product: GhosttyTerminal
       - package: GhosttyTerminal
         product: GhosttyKit
-      - package: Sparkle
     info:
       path: Sources/Info.plist
       properties:
-        CFBundleName: herdrm
-        CFBundleDisplayName: herdrm
+        CFBundleName: fleecr
+        CFBundleDisplayName: fleecr
         CFBundleIconName: AppIcon
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
@@ -50,13 +46,10 @@ targets:
         CFBundleLocalizations:
           - en
           - zh-Hans
-        SUFeedURL: https://github.com/missuo/herdrm/releases/latest/download/appcast.xml
-        SUPublicEDKey: RHEhllstUuuVrVDCPGrbhg/8LivSzpuZB9X3u3xdV5o=
-        SUEnableAutomaticChecks: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.bybee.herdrm
-        PRODUCT_NAME: herdrm
+        PRODUCT_BUNDLE_IDENTIFIER: dev.bybee.fleecr
+        PRODUCT_NAME: fleecr
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5.10"
         MARKETING_VERSION: "0.1.0"

@@ -3,7 +3,7 @@ build/
 build-rel/
 build-ios/
 design/
-HerdrM.xcodeproj/
+*.xcodeproj/
 Sources/Info.plist
 *.xcuserstate
 **/xcuserdata/

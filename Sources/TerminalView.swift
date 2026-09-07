@@ -648,7 +648,7 @@ final class LineBreakTerminalView: AppTerminalView {
         }
 
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("herdrm-clipboard", isDirectory: true)
+            .appendingPathComponent("fleecr-clipboard", isDirectory: true)
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true,
@@ -907,30 +907,7 @@ func applyTerminalAppearance(
     view.terminalController.setColorScheme(dark ? .dark : .light)
 }
 
-@MainActor
-enum ShellViewRegistry {
-    private struct WeakView { weak var view: LocalProcessTerminalView? }
-    private static var views: [UUID: WeakView] = [:]
-
-    static func register(_ view: LocalProcessTerminalView, for id: UUID) {
-        views[id] = WeakView(view: view)
-    }
-
-    static func unregister(_ id: UUID) {
-        views[id] = nil
-    }
-
-    static func focus(_ id: UUID) {
-        DispatchQueue.main.async {
-            guard let view = views[id]?.view, let window = view.window else { return }
-            window.makeFirstResponder(view)
-        }
-    }
-}
-
 struct ShellTerminalView: NSViewRepresentable {
-    var sessionID: UUID?
-    var device: Device = .local
     var fontName: String = ""
     var fontSize: Double = TerminalDefaults.defaultFontSize
     var thinStrokes: Bool = true
@@ -947,7 +924,6 @@ struct ShellTerminalView: NSViewRepresentable {
         let view = LineBreakTerminalView()
         view.processDelegate = context.coordinator
         context.coordinator.onExit = onExit
-        context.coordinator.sessionID = sessionID
         applyTerminalAppearance(
             view,
             fontName: fontName,
@@ -959,25 +935,15 @@ struct ShellTerminalView: NSViewRepresentable {
             mouseReporting: mouseReporting
         )
 
-        let command = HerdrService(device: device, autoStartLocalServer: false)
-            .terminalCommand()
         var environment = ProcessInfo.processInfo.environment
         environment["TERM"] = "xterm-256color"
         environment["COLORTERM"] = "truecolor"
         environment["LANG"] = "en_US.UTF-8"
-        for (key, value) in command.environment {
-            environment[key] = value
-        }
-        context.coordinator.authorizationID = command.authorizationID
-        context.coordinator.scheduleAuthorizationCleanup()
         view.startProcess(
-            executable: command.executable,
-            args: command.args,
+            executable: "/bin/sh",
+            args: ["-c", "cd \"$HOME\"; exec \"${SHELL:-/bin/zsh}\" -l"],
             environment: environment
         )
-        if let sessionID {
-            ShellViewRegistry.register(view, for: sessionID)
-        }
         DispatchQueue.main.async { [weak view] in
             guard let view, let window = view.window else { return }
             window.makeFirstResponder(view)
@@ -1002,39 +968,16 @@ struct ShellTerminalView: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {
         coordinator.onExit = nil
-        coordinator.discardAuthorization()
-        if let sessionID = coordinator.sessionID {
-            ShellViewRegistry.unregister(sessionID)
-        }
         nsView.terminate(signal: SIGHUP)
     }
 
     final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
         var onExit: ((Int32?) -> Void)?
-        var sessionID: UUID?
-        nonisolated(unsafe) var authorizationID: UUID?
-
-        deinit {
-            discardAuthorization()
-        }
-
-        func scheduleAuthorizationCleanup() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
-                self?.discardAuthorization()
-            }
-        }
-
-        nonisolated func discardAuthorization() {
-            guard let authorizationID else { return }
-            try? SSHCredentialStore.removeAuthorization(authorizationID)
-            self.authorizationID = nil
-        }
 
         func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
         func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
         func hostCurrentDirectoryUpdate(source: LocalProcessTerminalView, directory: String?) {}
         func processTerminated(source: LocalProcessTerminalView, exitCode: Int32?) {
-            discardAuthorization()
             let callback = onExit
             onExit = nil
             DispatchQueue.main.async { callback?(exitCode) }

@@ -28,7 +28,7 @@ public struct ShellEnvironment: Sendable, Equatable {
 
     /// First caller spawns a login shell (must not run on the UI thread); later
     /// callers share the snapshot. A failed probe is cached as empty so we never
-    /// retry a hanging `.zshrc` on every New Agent sheet.
+    /// retry a hanging `.zshrc` for every shell operation.
     public static func ensure() async -> ShellEnvironment {
         await Cache.shared.ensure()
     }

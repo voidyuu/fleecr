@@ -2,7 +2,7 @@ import AppKit
 import HerdrKit
 import SwiftUI
 
-/// Design tokens from the herdrm design canvas (waku-derived), light/dark adaptive.
+/// Design tokens from the fleecr design canvas (waku-derived), light/dark adaptive.
 enum Theme {
     private static func dynamic(_ light: NSColor, _ dark: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in

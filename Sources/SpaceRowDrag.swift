@@ -109,8 +109,8 @@ struct AgentRowDragHost: View {
 }
 
 final class SidebarRowDragNSView: NSView, NSDraggingSource {
-    static let spacePasteboardType = NSPasteboard.PasteboardType("dev.bybee.herdrm.space-id")
-    static let agentPasteboardType = NSPasteboard.PasteboardType("dev.bybee.herdrm.agent-id")
+    static let spacePasteboardType = NSPasteboard.PasteboardType("dev.bybee.fleecr.space-id")
+    static let agentPasteboardType = NSPasteboard.PasteboardType("dev.bybee.fleecr.agent-id")
 
     var pasteboardType = SidebarRowDragNSView.spacePasteboardType
     var entryID = ""

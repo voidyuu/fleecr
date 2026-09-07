@@ -65,38 +65,6 @@
         }
       }
     },
-    "New Agent" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New Agent"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新建 Agent"
-          }
-        }
-      }
-    },
-    "New Agent…" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New Agent…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新建 Agent…"
-          }
-        }
-      }
-    },
     "New Terminal" : {
       "localizations" : {
         "en" : {
@@ -449,22 +417,6 @@
         }
       }
     },
-    "Check for Updates…" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Check for Updates…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "检查更新…"
-          }
-        }
-      }
-    },
     "Terminal" : {
       "localizations" : {
         "en" : {
@@ -753,18 +705,18 @@
         }
       }
     },
-    "Finder-launched apps don’t inherit your terminal PATH. herdrm captures it once from a login + interactive shell, then looks up these names. A path here is an escape hatch when detection picks the wrong binary." : {
+    "Finder-launched apps don’t inherit your terminal PATH. fleecr captures it once from a login + interactive shell, then looks up these names. A path here is an escape hatch when detection picks the wrong binary." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Finder-launched apps don’t inherit your terminal PATH. herdrm captures it once from a login + interactive shell, then looks up these names. A path here is an escape hatch when detection picks the wrong binary."
+            "value" : "Finder-launched apps don’t inherit your terminal PATH. fleecr captures it once from a login + interactive shell, then looks up these names. A path here is an escape hatch when detection picks the wrong binary."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "通过 Finder 启动的应用不会继承终端 PATH。herdrm 会从登录 + 交互式 shell 捕获一次，再按这些名称查找。检测结果不对时，可在此填写路径作为兜底。"
+            "value" : "通过 Finder 启动的应用不会继承终端 PATH。fleecr 会从登录 + 交互式 shell 捕获一次，再按这些名称查找。检测结果不对时，可在此填写路径作为兜底。"
           }
         }
       }
@@ -1121,18 +1073,18 @@
         }
       }
     },
-    "Changing language takes effect after you quit and reopen herdrm." : {
+    "Changing language takes effect after you quit and reopen fleecr." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Changing language takes effect after you quit and reopen herdrm."
+            "value" : "Changing language takes effect after you quit and reopen fleecr."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更改语言后，退出并重新打开 herdrm 才会生效。"
+            "value" : "更改语言后，退出并重新打开 fleecr 才会生效。"
           }
         }
       }
@@ -1265,18 +1217,18 @@
         }
       }
     },
-    "herdrm — a native macOS console for herdr." : {
+    "fleecr — a native macOS console for herdr." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "herdrm — a native macOS console for herdr."
+            "value" : "fleecr — a native macOS console for herdr."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "herdrm — 面向 herdr 的原生 macOS 控制台。"
+            "value" : "fleecr — 面向 herdr 的原生 macOS 控制台。"
           }
         }
       }
@@ -1873,38 +1825,6 @@
         }
       }
     },
-    "the focused space" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "the focused space"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "当前聚焦的空间"
-          }
-        }
-      }
-    },
-    "Starts in %@, attached to its live terminal" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starts in %@, attached to its live terminal"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 %@ 中启动，并附加到其实时终端"
-          }
-        }
-      }
-    },
     "AGENT" : {
       "localizations" : {
         "en" : {
@@ -1917,54 +1837,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Agent"
-          }
-        }
-      }
-    },
-    "Checking agents on %@…" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Checking agents on %@…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在检查 %@ 上的 Agent…"
-          }
-        }
-      }
-    },
-    "Couldn’t check installed agent CLIs." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn’t check installed agent CLIs."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法检查本机已安装的 Agent CLI。"
-          }
-        }
-      }
-    },
-    "Couldn’t load this server’s agent catalog." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Couldn’t load this server’s agent catalog."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法加载此服务器的 Agent 目录。"
           }
         }
       }
@@ -1985,38 +1857,6 @@
         }
       }
     },
-    "No supported agent CLI was found on this Mac. Install one, or set a binary path in Settings → Agents." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No supported agent CLI was found on this Mac. Install one, or set a binary path in Settings → Agents."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "本机未找到受支持的 Agent CLI。请先安装，或在设置 → Agent 中指定二进制路径。"
-          }
-        }
-      }
-    },
-    "This server advertises no agent manifests." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This server advertises no agent manifests."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此服务器未声明任何 Agent manifest。"
-          }
-        }
-      }
-    },
     "SPACE" : {
       "localizations" : {
         "en" : {
@@ -2033,22 +1873,6 @@
         }
       }
     },
-    "Focused space" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Focused space"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "聚焦的空间"
-          }
-        }
-      }
-    },
     "OPTIONS" : {
       "localizations" : {
         "en" : {
@@ -2061,38 +1885,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选项"
-          }
-        }
-      }
-    },
-    "Bypass permissions" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bypass permissions"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "绕过权限"
-          }
-        }
-      }
-    },
-    "Start Agent" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start Agent"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动 Agent"
           }
         }
       }
@@ -2733,70 +2525,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "剪贴板中的图片无法编码为 PNG。"
-          }
-        }
-      }
-    },
-    "Connect to %@ over SSH" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connect to %@ over SSH"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "通过 SSH 连接到 %@"
-          }
-        }
-      }
-    },
-    "Runs in this app only; closing herdrm ends the shell." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Runs in this app only; closing herdrm ends the shell."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅在本应用内运行；退出 herdrm 时该 Shell 会结束。"
-          }
-        }
-      }
-    },
-    "Standalone (not in a space)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Standalone (not in a space)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "独立 Shell（不在空间中）"
-          }
-        }
-      }
-    },
-    "Start a login shell on this Mac" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start a login shell on this Mac"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在这台 Mac 上启动登录 Shell"
           }
         }
       }

@@ -27,8 +27,8 @@ final class LocalPTYProcess: @unchecked Sendable {
 
     private(set) var shellPid: pid_t = 0
     private var masterFd: Int32 = -1
-    private let readQueue = DispatchQueue(label: "dev.bybee.herdrm.pty-read")
-    private let writeQueue = DispatchQueue(label: "dev.bybee.herdrm.pty-write")
+    private let readQueue = DispatchQueue(label: "dev.bybee.fleecr.pty-read")
+    private let writeQueue = DispatchQueue(label: "dev.bybee.fleecr.pty-write")
     private let stateLock = NSLock()
     private var readSource: DispatchSourceRead?
     private var processSource: DispatchSourceProcess?

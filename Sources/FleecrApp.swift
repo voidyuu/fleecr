@@ -1,7 +1,6 @@
 import AppKit
 import Darwin
 import HerdrKit
-import Sparkle
 import SwiftUI
 import UserNotifications
 
@@ -52,13 +51,11 @@ extension FocusedValues {
 }
 
 @main
-struct HerdrMApp: App {
+struct FleecrApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @AppStorage("app.theme") private var themePreference = "system"
     @FocusedValue(\.appModel) private var focusedModel
     @FocusedValue(\.splitAxis) private var focusedSplitAxis
-
-    private let updaterController: SPUStandardUpdaterController
 
     init() {
         if ProcessInfo.processInfo.environment[SSHCredentialStore.askPassModeEnvironmentKey] == "1" {
@@ -67,11 +64,6 @@ struct HerdrMApp: App {
         AppLanguage.synchronize()
         SSHCredentialStore.purgeAuthorizations()
         TerminalDefaults.registerBundledFonts()
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
-            updaterDelegate: nil,
-            userDriverDelegate: nil
-        )
     }
 
     var body: some Scene {
@@ -85,23 +77,24 @@ struct HerdrMApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
-            // herdrm is a single-window console: a second window would duplicate the
-            // whole device tree, so New Window gives up ⌘N to the action that matters.
+            // fleecr is a single-window console, so New Window is not available.
             CommandGroup(replacing: .newItem) {
-                Button("New Agent") { focusedModel?.showNewAgent = true }
-                    .keyboardShortcut("n", modifiers: .command)
-                    .disabled(focusedModel == nil)
                 Button("New Terminal") { focusedModel?.showNewTerminal = true }
                     .keyboardShortcut("t", modifiers: .command)
                     .disabled(focusedModel == nil)
-                Button("New Space") { focusedModel?.showNewSpace = true }
+                if let model = focusedModel,
+                   let deviceID = model.deviceFilter,
+                   let device = model.device(deviceID) {
+                    Button("New Space") { model.createNewSpace(on: device) }
+                        .keyboardShortcut("n", modifiers: [.command, .shift])
+                } else {
+                    Menu("New Space") {
+                        ForEach(focusedModel?.devices ?? []) { device in
+                            Button(device.name) { focusedModel?.createNewSpace(on: device) }
+                        }
+                    }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
                     .disabled(focusedModel == nil)
-            }
-
-            CommandGroup(after: .appInfo) {
-                Button("Check for Updates…") {
-                    updaterController.checkForUpdates(nil)
                 }
             }
 
@@ -174,14 +167,11 @@ struct HerdrMApp: App {
                 .disabled(focusedSplitAxis != .horizontal)
             }
             CommandGroup(replacing: .saveItem) {
-                // ⌘W closes the most local thing first: the split, then the
-                // selected standalone terminal, then the window. Server-owned
-                // panes close from their confirmed sidebar action instead.
+                // ⌘W closes the split before the window. Server-owned panes
+                // close from their confirmed sidebar action instead.
                 Button(closeButtonTitle) {
                     if let model = focusedModel, model.shellSplitAxis != nil {
                         model.shellSplitAxis = nil
-                    } else if let model = focusedModel, let shell = model.selectedShell {
-                        model.closeShellSession(shell.id)
                     } else {
                         NSApp.keyWindow?.performClose(nil)
                     }
@@ -191,13 +181,12 @@ struct HerdrMApp: App {
         }
 
         Settings {
-            SettingsView(model: appDelegate.model)
+            SettingsView()
         }
     }
 
     private var closeButtonTitle: String {
         if focusedModel?.shellSplitAxis != nil { return String(localized: "Close Split") }
-        if focusedModel?.selectedShell != nil { return String(localized: "Close Terminal") }
         return String(localized: "Close")
     }
 
@@ -240,74 +229,18 @@ struct HerdrMApp: App {
 }
 
 struct SettingsView: View {
-    @ObservedObject var model: AppModel
-
     var body: some View {
         TabView {
             AppearanceSettingsView()
                 .tabItem { Label("Appearance", systemImage: "paintbrush") }
             TerminalSettingsView()
                 .tabItem { Label("Terminal", systemImage: "terminal") }
-            AgentsSettingsView(model: model)
-                .tabItem { Label("Agents", systemImage: "sparkles") }
             NotificationSettingsView()
                 .tabItem { Label("Notifications", systemImage: "bell") }
             AboutSettingsView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 420)
-    }
-}
-
-struct AgentsSettingsView: View {
-    var model: AppModel
-    @State private var drafts: [String: String] = AgentBinaryOverrides.load()
-
-    /// Kinds the picker knows how to start. The lookup command is `kind`,
-    /// except Cursor which installs as `cursor-agent`.
-    private static let kinds: [(kind: String, label: String, hint: String)] = [
-        ("claude", "Claude", "claude"),
-        ("codex", "Codex", "codex"),
-        ("cursor", "Cursor", "cursor-agent"),
-        ("gemini", "Gemini", "gemini"),
-        ("grok", "Grok", "grok"),
-        ("kimi", "Kimi", "kimi"),
-        ("opencode", "OpenCode", "opencode"),
-        ("pi", "Pi", "pi"),
-        ("copilot", "Copilot", "copilot"),
-    ]
-
-    var body: some View {
-        Form {
-            Section {
-                ForEach(Self.kinds, id: \.kind) { row in
-                    TextField(row.label, text: binding(row.kind), prompt: Text("Automatic"))
-                        .font(.system(size: 12).monospaced())
-                        .help(String(localized: "Command or path for \(row.hint). Leave empty to detect."))
-                }
-            } footer: {
-                Text("Finder-launched apps don’t inherit your terminal PATH. herdrm captures it once from a login + interactive shell, then looks up these names. A path here is an escape hatch when detection picks the wrong binary.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(20)
-        .onAppear { drafts = AgentBinaryOverrides.load() }
-        .onChange(of: drafts) { _, _ in commit() }
-        .onDisappear(perform: commit)
-        .onSubmit(commit)
-    }
-
-    private func commit() {
-        AgentBinaryOverrides.save(drafts)
-        model.reloadAgentCatalog(deviceID: Device.local.id)
-    }
-
-    private func binding(_ kind: String) -> Binding<String> {
-        Binding(
-            get: { drafts[kind] ?? "" },
-            set: { drafts[kind] = $0 }
-        )
     }
 }
 
@@ -439,7 +372,7 @@ struct AppearanceSettingsView: View {
                 AppLanguage.apply(AppLanguage(rawValue: newValue) ?? .system)
             }
             // Changing AppleLanguages only takes effect on the next process start.
-            Text("Changing language takes effect after you quit and reopen herdrm.")
+            Text("Changing language takes effect after you quit and reopen fleecr.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
@@ -509,7 +442,7 @@ struct NotificationSettingsView: View {
 struct AboutSettingsView: View {
     var body: some View {
         Form {
-            Text("herdrm — a native macOS console for herdr.")
+            Text("fleecr — a native macOS console for herdr.")
                 .font(.system(size: 12.5))
             Text("Devices are managed from the switcher in the sidebar footer.")
                 .font(.system(size: 11.5))

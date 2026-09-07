@@ -87,7 +87,7 @@ public struct AgentInfo: Codable, Sendable, Identifiable, Equatable {
         return agentKind
     }
 
-    /// New Agent sets the tab label to the kind (`agy`, `codex`, …).
+    /// Agent startup labels tabs with the kind (`agy`, `codex`, …).
     public static func isGenericTabLabel(_ label: String, agentKind: String, name: String?) -> Bool {
         let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return true }
