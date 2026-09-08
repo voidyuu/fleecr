@@ -4,13 +4,11 @@ import PackageDescription
 let package = Package(
     name: "GhosttyTerminal",
     platforms: [
-        .iOS(.v17),
         .macOS(.v14),
     ],
     products: [
         .library(name: "GhosttyKit", targets: ["GhosttyKit"]),
         .library(name: "GhosttyTerminal", targets: ["GhosttyTerminal"]),
-        .library(name: "GhosttyTheme", targets: ["GhosttyTheme"]),
     ],
     targets: [
         .binaryTarget(
@@ -38,12 +36,6 @@ let package = Package(
                 .copy("Resources/Ghostty"),
                 .copy("Resources/terminfo"),
             ]
-        ),
-        .target(
-            name: "GhosttyTheme",
-            dependencies: ["GhosttyTerminal"],
-            path: "Sources/GhosttyTheme",
-            exclude: ["LICENSE"]
         ),
     ]
 )

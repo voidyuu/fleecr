@@ -21,9 +21,6 @@ targets:
       - Sources
       - path: Resources
         buildPhase: resources
-        excludes:
-          - Localizable.xcstrings
-      - path: Resources/Localizable.xcstrings
     dependencies:
       - package: HerdrKit
       - package: GhosttyTerminal
@@ -70,3 +67,14 @@ targets:
           CODE_SIGN_IDENTITY: "Developer ID Application: MOE AI LLC (NCFNX3LJ83)"
           ONLY_ACTIVE_ARCH: NO
           ARCHS: "arm64 x86_64"
+  fleecrTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests
+    dependencies:
+      - target: fleecr
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"
+        GENERATE_INFOPLIST_FILE: YES
