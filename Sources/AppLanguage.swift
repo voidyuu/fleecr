@@ -53,7 +53,11 @@ extension Device {
         case .local:
             return String(localized: "This Mac · herdr.sock")
         case .ssh(let target):
+            if session != "default" && !session.isEmpty {
+                return String(localized: "\(target) (\(session)) · SSH")
+            }
             return String(localized: "\(target) · SSH")
         }
     }
 }
+

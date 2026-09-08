@@ -41,6 +41,7 @@ public actor SSHTunnel {
     static let maximumUploadBytes = 50 * 1024 * 1024
 
     public let target: String
+    public let session: String
     public private(set) var localSocketPath: String?
     private let credentialID: UUID?
     private var process: Process?
@@ -53,8 +54,9 @@ public actor SSHTunnel {
         "for d in \"$HOME\"/.nvm/versions/node/*/bin; do [ -d \"$d\" ] && PATH=\"$d:$PATH\"; done; "
         + "export PATH=\"$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.grok/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\""
 
-    public init(target: String, credentialID: UUID? = nil) {
+    public init(target: String, session: String = "default", credentialID: UUID? = nil) {
         self.target = target
+        self.session = session.isEmpty ? "default" : session
         self.credentialID = credentialID
     }
 
@@ -83,7 +85,15 @@ public actor SSHTunnel {
 
     public func remoteSocketPath() async throws -> String {
         let home = try await probeRemoteHome()
-        return "\(home)/.config/herdr/herdr.sock"
+        return Self.remoteSocketPath(home: home, session: session)
+    }
+
+    public static func remoteSocketPath(home: String, session: String = "default") -> String {
+        if session == "default" {
+            return "\(home)/.config/herdr/herdr.sock"
+        } else {
+            return "\(home)/.config/herdr/sessions/\(session)/herdr.sock"
+        }
     }
 
     // MARK: - Tunnel lifecycle
@@ -102,7 +112,7 @@ public actor SSHTunnel {
             .appendingPathComponent("herdrm-tunnels", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         // Keep the path short: sockaddr_un caps at 104 bytes.
-        let localSock = dir.appendingPathComponent("\(abs(target.hashValue) % 100_000).sock").path
+        let localSock = dir.appendingPathComponent("\(abs(target.hashValue ^ session.hashValue) % 100_000).sock").path
         try? FileManager.default.removeItem(atPath: localSock)
 
         let proc = Process()

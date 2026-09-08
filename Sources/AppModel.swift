@@ -123,14 +123,23 @@ final class AppModel: ObservableObject {
     private var previousStatuses: [UUID: [String: AgentStatus]] = [:]
 
     init() {
-        let loaded = DeviceStore().load()
+        let loaded = store.load()
         devices = loaded
         // Restore the device filter only if that device still exists;
-        // otherwise fall back to All Devices.
+        // otherwise fall back to Herdr's selected profile or All Devices.
         if let raw = UserDefaults.standard.string(forKey: Self.deviceFilterKey),
            let id = UUID(uuidString: raw),
            loaded.contains(where: { $0.id == id }) {
             deviceFilter = id
+        } else if let selectedProfileID = store.loadSelectedProfile(),
+                  loaded.contains(where: { $0.id == selectedProfileID }) {
+            deviceFilter = selectedProfileID
+        }
+
+        store.startMonitoring { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.reconcileDevicesFromStore()
+            }
         }
     }
 
@@ -426,8 +435,77 @@ final class AppModel: ObservableObject {
         selectedPane = preferredVisibleAgent()?.ref ?? firstVisiblePaneRef
     }
 
+    // MARK: - Store Reconciliation
+
+    func reconcileDevicesFromStore() {
+        let loaded = store.load()
+        guard loaded != devices else { return }
+
+        let oldDevices = devices
+        let oldIDs = Set(oldDevices.map(\.id))
+        let newIDs = Set(loaded.map(\.id))
+
+        // 1. Clean up removed devices
+        for removedID in oldIDs.subtracting(newIDs) {
+            stopSession(removedID)
+            removeSSHPassword(for: removedID)
+            if deviceFilter == removedID {
+                setDeviceFilter(nil)
+            }
+        }
+
+        // 2. Prepare reconciled devices preserving cached osID
+        var reconciled: [Device] = []
+        for var newDevice in loaded {
+            if let oldDevice = oldDevices.first(where: { $0.id == newDevice.id }),
+               oldDevice.sshTarget == newDevice.sshTarget {
+                newDevice.osID = oldDevice.osID
+            }
+            reconciled.append(newDevice)
+        }
+
+        // 3. Connect, reconnect, or disconnect modified/added devices
+        for newDevice in reconciled {
+            if let oldDevice = oldDevices.first(where: { $0.id == newDevice.id }) {
+                let targetChanged = oldDevice.sshTarget != newDevice.sshTarget
+                let sessionChanged = oldDevice.session != newDevice.session
+                let enabledChanged = oldDevice.isEnabled != newDevice.isEnabled
+
+                if targetChanged || sessionChanged {
+                    if targetChanged { removeSSHPassword(for: newDevice.id) }
+                    stopSession(newDevice.id)
+                    if newDevice.isEnabled {
+                        startSession(newDevice)
+                        probeOSIfNeeded(newDevice)
+                    } else {
+                        sessions[newDevice.id] = DeviceSessionState(connection: .idle)
+                    }
+                } else if enabledChanged {
+                    if newDevice.isEnabled {
+                        startSession(newDevice)
+                        probeOSIfNeeded(newDevice)
+                    } else {
+                        stopSession(newDevice.id)
+                        sessions[newDevice.id] = DeviceSessionState(connection: .idle)
+                    }
+                }
+            } else {
+                // Brand new device
+                if newDevice.isEnabled {
+                    startSession(newDevice)
+                    probeOSIfNeeded(newDevice)
+                } else {
+                    sessions[newDevice.id] = DeviceSessionState(connection: .idle)
+                }
+            }
+        }
+
+        devices = reconciled
+    }
+
     func setDeviceFilter(_ id: UUID?) {
         deviceFilter = id
+        store.saveSelectedProfile(id)
         if let id, let space = selectedSpace, space.deviceID != id {
             selectedSpace = visibleSpaces.first?.ref
         } else if selectedSpace == nil {
@@ -488,8 +566,12 @@ final class AppModel: ObservableObject {
             _ = await ShellEnvironment.ensure()
         }
         for device in devices {
-            startSession(device)
-            probeOSIfNeeded(device)
+            if device.isLocal || device.isEnabled {
+                startSession(device)
+                probeOSIfNeeded(device)
+            } else {
+                sessions[device.id] = DeviceSessionState(connection: .idle)
+            }
         }
     }
 
@@ -569,6 +651,7 @@ final class AppModel: ObservableObject {
     /// Tears down every live tunnel. Awaited from the app's terminate hook — `stopSession`
     /// fires its disconnect in a detached `Task`, which never runs when the process is exiting.
     func shutdownAllSessions() async {
+        store.stopMonitoring()
         let live = services
         services.removeAll()
         sessionTasks.values.forEach { $0.cancel() }
@@ -594,13 +677,24 @@ final class AppModel: ObservableObject {
         Task { await service?.disconnect() }
     }
 
-    func addDevice(name: String, sshTarget: String) {
-        let device = Device(name: name, kind: .ssh(target: sshTarget))
-        devices.append(device)
-        store.save(devices)
-        startSession(device)
-        probeOSIfNeeded(device)
-        setDeviceFilter(device.id)
+    func addDevice(name: String, sshTarget: String, session: String = "default") async throws {
+        let trimmedSession = session.trimmingCharacters(in: .whitespaces)
+        let resolvedSession = trimmedSession.isEmpty ? "default" : trimmedSession
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedTarget = sshTarget.trimmingCharacters(in: .whitespaces)
+        let resolvedName = trimmedName.isEmpty ? trimmedTarget : trimmedName
+
+        try await HerdrMachineCLI.add(
+            target: trimmedTarget,
+            label: resolvedName,
+            session: resolvedSession
+        )
+
+        reconcileDevicesFromStore()
+
+        if let newDevice = devices.first(where: { $0.sshTarget == trimmedTarget && $0.session == resolvedSession }) {
+            setDeviceFilter(newDevice.id)
+        }
     }
 
     func saveSSHPassword(_ password: String, for request: SSHAuthenticationRequest) {
@@ -627,11 +721,11 @@ final class AppModel: ObservableObject {
     }
 
     var hasReconnectableDevice: Bool {
-        devicesInScope.contains { isFailed($0.id) }
+        devicesInScope.contains { $0.isEnabled && isFailed($0.id) }
     }
 
     func reconnectFailedDevices() {
-        for device in devicesInScope where isFailed(device.id) {
+        for device in devicesInScope where device.isEnabled && isFailed(device.id) {
             stopSession(device.id)
             startSession(device)
             probeOSIfNeeded(device)
@@ -643,20 +737,66 @@ final class AppModel: ObservableObject {
         return false
     }
 
-    /// Renames a device and/or updates its SSH target (e.g. after an IP change).
-    func updateDevice(_ id: UUID, name: String, sshTarget: String) {
-        guard let index = devices.firstIndex(where: { $0.id == id }), !devices[index].isLocal else { return }
-        let targetChanged = devices[index].sshTarget != sshTarget
-        devices[index].name = name
-        if targetChanged {
-            removeSSHPassword(for: id)
-            devices[index].kind = .ssh(target: sshTarget)
-            devices[index].osID = nil
-            stopSession(id)
-            startSession(devices[index])
-            probeOSIfNeeded(devices[index])
+    /// Renames a device and/or updates its SSH target, session, or enabled state via official herdr CLI.
+    func updateDevice(
+        _ id: UUID,
+        name: String,
+        sshTarget: String,
+        session: String = "default",
+        isEnabled: Bool = true
+    ) async throws {
+        guard let current = device(id), !current.isLocal else { return }
+        let targetChanged = current.sshTarget != sshTarget
+        let sessionChanged = current.session != session
+        let nameChanged = current.name != name
+        let enabledChanged = current.isEnabled != isEnabled
+
+        let profileID = id.profileIDString
+
+        if targetChanged || sessionChanged {
+            try await HerdrMachineCLI.remove(profileID: profileID)
+            try await HerdrMachineCLI.add(
+                target: sshTarget,
+                label: name,
+                session: session.isEmpty ? "default" : session
+            )
+            if !isEnabled {
+                if let updated = store.load().first(where: { $0.sshTarget == sshTarget }) {
+                    try? await HerdrMachineCLI.disable(profileID: updated.id.profileIDString)
+                }
+            }
+        } else {
+            if nameChanged {
+                try await HerdrMachineCLI.rename(profileID: profileID, label: name)
+            }
+            if enabledChanged {
+                if isEnabled {
+                    try await HerdrMachineCLI.enable(profileID: profileID)
+                } else {
+                    try await HerdrMachineCLI.disable(profileID: profileID)
+                }
+            }
         }
-        store.save(devices)
+
+        reconcileDevicesFromStore()
+    }
+
+    func setDeviceEnabled(_ device: Device, enabled: Bool) {
+        guard !device.isLocal else { return }
+        Task {
+            if enabled {
+                try? await HerdrMachineCLI.enable(profileID: device.id.profileIDString)
+            } else {
+                try? await HerdrMachineCLI.disable(profileID: device.id.profileIDString)
+            }
+            await MainActor.run {
+                self.reconcileDevicesFromStore()
+            }
+        }
+    }
+
+    func toggleDeviceEnabled(_ device: Device) {
+        setDeviceEnabled(device, enabled: !device.isEnabled)
     }
 
     func removeDevice(_ device: Device) {
@@ -665,13 +805,18 @@ final class AppModel: ObservableObject {
         if sshAuthenticationRequest?.deviceID == device.id { sshAuthenticationRequest = nil }
         stopSession(device.id)
         devices.removeAll { $0.id == device.id }
-        store.save(devices)
         if deviceFilter == device.id { deviceFilter = nil }
         if selectedSpace?.deviceID == device.id {
             selectedSpace = visibleSpaces.first(where: { $0.device.id != device.id })?.ref
         }
         if selectedPane?.deviceID == device.id {
             selectedPane = preferredVisibleAgent()?.ref ?? firstVisiblePaneRef
+        }
+        Task {
+            try? await HerdrMachineCLI.remove(profileID: device.id.profileIDString)
+            await MainActor.run {
+                self.reconcileDevicesFromStore()
+            }
         }
     }
 
@@ -834,7 +979,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Sniffs the device OS once (for the OS brand icon) and persists it.
+    /// Sniffs the device OS once (for the OS brand icon) and caches it in memory.
     private func probeOSIfNeeded(_ device: Device) {
         guard device.osID == nil, let target = device.sshTarget else { return }
         Task {
@@ -844,7 +989,6 @@ final class AppModel: ObservableObject {
             ) else { return }
             if let index = self.devices.firstIndex(where: { $0.id == device.id }) {
                 self.devices[index].osID = os
-                self.store.save(self.devices)
             }
         }
     }

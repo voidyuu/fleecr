@@ -441,13 +441,16 @@ struct AddDeviceSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var target = ""
+    @State private var session = "default"
+    @State private var isSubmitting = false
+    @State private var errorMessage: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SheetHeader(
                 systemImage: "desktopcomputer",
                 title: String(localized: "Add Device"),
-                subtitle: String(localized: "Uses OpenSSH config, agent, Tailscale SSH, or password")
+                subtitle: String(localized: "Runs official 'herdr machine add' to prepare and save the machine")
             )
             Rectangle().fill(Theme.hairline).frame(height: 1)
 
@@ -455,15 +458,52 @@ struct AddDeviceSheet: View {
                 SheetSectionLabel("NAME")
                 TextField("mac-studio", text: $name)
                     .textFieldStyle(.roundedBorder)
+                    .disabled(isSubmitting)
                 Spacer().frame(height: 8)
                 SheetSectionLabel("SSH TARGET")
                 TextField("vincent@10.10.10.87", text: $target)
                     .textFieldStyle(.roundedBorder)
+                    .disabled(isSubmitting)
                 Text("user@host, a ~/.ssh/config alias, or user@host:port for a custom port.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.textTertiary)
+                Spacer().frame(height: 8)
+                SheetSectionLabel("REMOTE SESSION")
+                TextField("default", text: $session)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(isSubmitting)
+                Text("Herdr session name on the remote machine (defaults to \"default\").")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Theme.textTertiary)
             }
             .padding(16)
+
+            if isSubmitting {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Connecting and preparing remote Herdr server…")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+            }
+
+            if let errorMessage {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.danger)
+                        .font(.system(size: 12))
+                    Text(errorMessage)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+            }
 
             Rectangle().fill(Theme.hairline).frame(height: 1)
 
@@ -471,24 +511,36 @@ struct AddDeviceSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Add Device") {
+                    .disabled(isSubmitting)
+                Button(isSubmitting ? "Adding…" : "Add Device") {
                     let trimmedName = name.trimmingCharacters(in: .whitespaces)
                     let trimmedTarget = target.trimmingCharacters(in: .whitespaces)
-                    model.addDevice(
-                        name: trimmedName.isEmpty ? trimmedTarget : trimmedName,
-                        sshTarget: trimmedTarget
-                    )
-                    dismiss()
+                    let trimmedSession = session.trimmingCharacters(in: .whitespaces)
+                    isSubmitting = true
+                    errorMessage = nil
+                    Task {
+                        do {
+                            try await model.addDevice(
+                                name: trimmedName.isEmpty ? trimmedTarget : trimmedName,
+                                sshTarget: trimmedTarget,
+                                session: trimmedSession.isEmpty ? "default" : trimmedSession
+                            )
+                            dismiss()
+                        } catch {
+                            errorMessage = error.localizedDescription
+                            isSubmitting = false
+                        }
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(target.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(target.trimmingCharacters(in: .whitespaces).isEmpty || isSubmitting)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .frame(width: 400)
+        .frame(width: 420)
     }
 }
 
@@ -689,13 +741,17 @@ struct EditDeviceSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var target = ""
+    @State private var session = "default"
+    @State private var isEnabled = true
+    @State private var isSubmitting = false
+    @State private var errorMessage: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SheetHeader(
                 systemImage: "pencil",
                 title: String(localized: "Edit Device"),
-                subtitle: String(localized: "Changing the SSH target reconnects the device")
+                subtitle: String(localized: "Applies changes via official 'herdr machine' CLI")
             )
             Rectangle().fill(Theme.hairline).frame(height: 1)
 
@@ -703,12 +759,50 @@ struct EditDeviceSheet: View {
                 SheetSectionLabel("NAME")
                 TextField("Name", text: $name)
                     .textFieldStyle(.roundedBorder)
+                    .disabled(isSubmitting)
                 Spacer().frame(height: 8)
                 SheetSectionLabel("SSH TARGET")
                 TextField("SSH target", text: $target)
                     .textFieldStyle(.roundedBorder)
+                    .disabled(isSubmitting)
+                Spacer().frame(height: 8)
+                SheetSectionLabel("REMOTE SESSION")
+                TextField("default", text: $session)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(isSubmitting)
+                Spacer().frame(height: 8)
+                Toggle("Enabled", isOn: $isEnabled)
+                    .font(.system(size: 12.5))
+                    .disabled(isSubmitting)
             }
             .padding(16)
+
+            if isSubmitting {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Applying changes via herdr CLI…")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+            }
+
+            if let errorMessage {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.danger)
+                        .font(.system(size: 12))
+                    Text(errorMessage)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+            }
 
             Rectangle().fill(Theme.hairline).frame(height: 1)
 
@@ -716,28 +810,43 @@ struct EditDeviceSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Save") {
+                    .disabled(isSubmitting)
+                Button(isSubmitting ? "Saving…" : "Save") {
                     let trimmedName = name.trimmingCharacters(in: .whitespaces)
                     let trimmedTarget = target.trimmingCharacters(in: .whitespaces)
-                    model.updateDevice(
-                        device.id,
-                        name: trimmedName.isEmpty ? trimmedTarget : trimmedName,
-                        sshTarget: trimmedTarget
-                    )
-                    dismiss()
+                    let trimmedSession = session.trimmingCharacters(in: .whitespaces)
+                    isSubmitting = true
+                    errorMessage = nil
+                    Task {
+                        do {
+                            try await model.updateDevice(
+                                device.id,
+                                name: trimmedName.isEmpty ? trimmedTarget : trimmedName,
+                                sshTarget: trimmedTarget,
+                                session: trimmedSession.isEmpty ? "default" : trimmedSession,
+                                isEnabled: isEnabled
+                            )
+                            dismiss()
+                        } catch {
+                            errorMessage = error.localizedDescription
+                            isSubmitting = false
+                        }
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(target.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(target.trimmingCharacters(in: .whitespaces).isEmpty || isSubmitting)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .frame(width: 400)
+        .frame(width: 420)
         .onAppear {
             name = device.name
             target = device.sshTarget ?? ""
+            session = device.session
+            isEnabled = device.isEnabled
         }
     }
 }

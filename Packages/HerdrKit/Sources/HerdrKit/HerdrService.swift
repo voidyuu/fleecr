@@ -25,7 +25,7 @@ public actor HerdrService {
     init(device: Device, localServer: LocalHerdrServer?) {
         self.device = device
         if let target = device.sshTarget {
-            self.tunnel = SSHTunnel(target: target, credentialID: device.id)
+            self.tunnel = SSHTunnel(target: target, session: device.session, credentialID: device.id)
         }
         self.localServer = localServer
     }
@@ -587,6 +587,9 @@ public actor HerdrService {
         case .terminal(let terminalID):
             attachArguments = "terminal attach \(Self.shellQuoted(terminalID)) --takeover"
         }
+        let sessionPrefix = (device.session != "default" && !device.session.isEmpty)
+            ? "--session \(Self.shellQuoted(device.session)) "
+            : ""
         switch device.kind {
         case .local:
             // Same PATH we used to discover `herdr`: login-shell snapshot, GUI
@@ -598,7 +601,7 @@ public actor HerdrService {
             environment.removeValue(forKey: "COLUMNS")
             environment.removeValue(forKey: "LINES")
             let script = "\(Self.attachBinarySelection(serverVersion: serverVersion)); "
-                + "exec \"$hb\" \(attachArguments)"
+                + "exec \"$hb\" \(sessionPrefix)\(attachArguments)"
             return TerminalCommand(
                 executable: "/bin/sh",
                 args: ["-c", script],
@@ -611,7 +614,7 @@ public actor HerdrService {
             // runs in the user's login shell, and the script's sh syntax must
             // not depend on it.
             let script = "\(SSHTunnel.remotePathExport); \(Self.attachBinarySelection(serverVersion: serverVersion)); "
-                + "exec \"$hb\" \(attachArguments)"
+                + "exec \"$hb\" \(sessionPrefix)\(attachArguments)"
             let remote = "exec /bin/sh -c \(Self.shellQuoted(script))"
             let authentication = SSHTunnel.authenticationConfiguration(for: device.id)
             var environment = (ShellEnvironment.cached ?? .empty).launchEnvironment(binary: nil)

@@ -515,6 +515,10 @@ struct DevicePopover: View {
                 }
                 .contextMenu {
                     if !device.isLocal {
+                        Button(device.isEnabled ? String(localized: "Disable Machine") : String(localized: "Enable Machine")) {
+                            model.toggleDeviceEnabled(device)
+                        }
+                        Divider()
                         Button(String(localized: "Edit \(device.name)…")) {
                             isPresented = false
                             model.deviceToEdit = device
@@ -583,6 +587,7 @@ struct DevicePopoverRow: View {
     @State private var hovered = false
 
     private var dotColor: Color {
+        if !device.isEnabled { return Theme.textGhost }
         switch connection {
         case .connected: return Theme.success
         case .connecting: return Theme.warning
@@ -591,22 +596,31 @@ struct DevicePopoverRow: View {
         }
     }
 
+    private var subtitleText: String {
+        if !device.isEnabled {
+            return String(localized: "Disabled · \(device.localizedSubtitle)")
+        }
+        return device.localizedSubtitle
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
                 DeviceIcon(osID: device.osID, isLocal: device.isLocal, size: 13)
                     .foregroundStyle(isActive ? Theme.text : Theme.textSecondary)
                     .frame(width: 16)
+                    .opacity(device.isEnabled ? 1 : 0.4)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text(device.name)
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.text)
+                            .opacity(device.isEnabled ? 1 : 0.6)
                         Circle()
                             .fill(dotColor)
                             .frame(width: 6, height: 6)
                     }
-                    Text(device.localizedSubtitle)
+                    Text(subtitleText)
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.textTertiary)
                         .lineLimit(1)

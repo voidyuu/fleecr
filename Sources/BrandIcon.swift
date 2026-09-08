@@ -11,10 +11,9 @@ struct BrandIcon: View {
 
     var body: some View {
         if let image = BrandIconLoader.image(named: resource) {
-            // Color variants keep their brand colors; mono ones tint like SF Symbols.
             Image(nsImage: image)
                 .resizable()
-                .renderingMode(resource.hasSuffix("-color") ? .original : .template)
+                .renderingMode(.template)
                 .scaledToFit()
                 .frame(width: size, height: size)
         } else {
@@ -35,7 +34,7 @@ enum BrandIconLoader {
         var loaded: NSImage?
         if let url = Bundle.main.url(forResource: name, withExtension: "svg"),
            let image = NSImage(contentsOf: url) {
-            image.isTemplate = !name.hasSuffix("-color")
+            image.isTemplate = true
             loaded = image
         }
         cache[name] = loaded
@@ -53,23 +52,27 @@ enum BrandIconLoader {
         return sized
     }
 
-    /// Maps a herdr agent kind ("claude", "codex", "grok", …) to a bundled icon resource,
-    /// preferring the brand-color variant when one is bundled.
+    /// Maps a herdr agent kind ("claude", "codex", "grok", …) to a bundled icon resource.
     static func agentIcon(for kind: String) -> String? {
         let normalized = kind.lowercased().replacingOccurrences(of: "_", with: "-")
         let map: [String: String] = [
+            "agy": "antigravity", "antigravity": "antigravity",
+            "amp": "amp",
             "claude": "claude", "claude-code": "claude",
+            "cline": "cline",
             "codex": "codex",
-            "grok": "grok",
+            "copilot": "copilot", "github-copilot": "githubcopilot",
             "cursor": "cursor", "cursor-agent": "cursor",
+            "deepseek": "deepseek",
+            "devin": "devin",
+            "gemini": "gemini",
+            "grok": "grok",
+            "kimi": "kimi", "moonshot": "moonshot",
+            "kiro": "kiro",
             "opencode": "opencode",
             "openai": "openai", "gpt": "openai",
-            "gemini": "gemini",
-            "deepseek": "deepseek",
-            "qwen": "qwen", "qwen-code": "qwen",
-            "copilot": "copilot", "github-copilot": "githubcopilot",
-            "kimi": "kimi",
             "pi": "pi",
+            "qwen": "qwen", "qwen-code": "qwen",
         ]
         var base: String?
         if let exact = map[normalized] {
@@ -83,10 +86,6 @@ enum BrandIconLoader {
                 .filter { normalized.hasPrefix("\($0.key)-") }
                 .max { $0.key.count < $1.key.count }?
                 .value
-        }
-        guard let base else { return nil }
-        if Bundle.main.url(forResource: "\(base)-color", withExtension: "svg") != nil {
-            return "\(base)-color"
         }
         return base
     }
