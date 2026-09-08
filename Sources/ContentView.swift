@@ -1,5 +1,22 @@
 import HerdrKit
 import SwiftUI
+import AppKit
+
+/// Lets us reach the hosting NSWindow to e.g. force a fully transparent title bar
+/// (keeps the native toolbar's volume/layout while removing its colour).
+struct WindowAccessor: NSViewRepresentable {
+    var onUpdate: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { onUpdate(view.window) }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { onUpdate(nsView.window) }
+    }
+}
 
 struct RootView: View {
     @Environment(\.openSettings) private var openSettings
@@ -21,6 +38,7 @@ struct RootView: View {
                 DetailView(model: model, sidebarCollapsed: $sidebarCollapsed)
             }
             .animation(.easeInOut(duration: 0.2), value: sidebarCollapsed)
+            .ignoresSafeArea(edges: .top)
         }
         .background(
             Button("") { sidebarCollapsed.toggle() }
@@ -50,7 +68,22 @@ struct RootView: View {
         }
         .focusedSceneValue(\.appModel, model)
         .sheet(isPresented: $model.showSearch) { SearchSheet(model: model) }
-        .ignoresSafeArea(.container, edges: .top)
+        .background(WindowAccessor { window in
+            window?.titlebarAppearsTransparent = true
+            window?.styleMask.insert(.fullSizeContentView)
+        })
+        .toolbarBackground(.hidden, for: .windowToolbar)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    sidebarCollapsed.toggle()
+                } label: {
+                    Image(systemName: sidebarCollapsed ? "sidebar.right" : "sidebar.left")
+                }
+                .help("Toggle sidebar (⌘B)")
+                .accessibilityLabel("Toggle sidebar")
+            }
+        }
         .frame(minWidth: 980, minHeight: 620)
         .onAppear {
             model.start()
@@ -110,6 +143,7 @@ struct DetailView: View {
                 .zIndex(1)
             detailContent
         }
+        .padding(.top, 48)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.contentBackground.ignoresSafeArea())
     }
@@ -122,12 +156,6 @@ struct DetailView: View {
 
     private var titlebar: some View {
         HStack(spacing: 8) {
-            if sidebarCollapsed {
-                Spacer().frame(width: TitlebarMetrics.trafficLightClearance - 10)
-                TitlebarIconButton(systemName: "sidebar.left", help: "Show Sidebar (⌘B)") {
-                    sidebarCollapsed = false
-                }
-            }
             if let attached = model.selectedAttachedEntry {
                 switch attached {
                 case .agent(let entry):

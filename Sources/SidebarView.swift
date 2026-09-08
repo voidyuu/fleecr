@@ -32,18 +32,6 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 28pt titlebar strip: traffic lights on the left, collapse toggle on the right
-            HStack {
-                Spacer()
-                TitlebarIconButton(systemName: "sidebar.left", help: "Hide Sidebar (⌘B)") {
-                    collapsed = true
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: TitlebarMetrics.height)
-
-            Spacer().frame(height: 8)
-
             VStack(spacing: 1) {
                 // Persistent Herdr terminals are listed under TERMINALS below.
                 actionRow(icon: "terminal", label: "New Terminal") {
@@ -144,6 +132,7 @@ struct SidebarView: View {
             Spacer(minLength: 0)
             footer
         }
+        .padding(.top, 48)
         .frame(width: 260)
         .background(Theme.sidebarBackground(theme: themeStore.activeTheme).ignoresSafeArea())
     }
@@ -400,26 +389,27 @@ struct SidebarView: View {
     }
 }
 
-/// Small icon button that sits in the 28pt titlebar strip.
-struct TitlebarIconButton: View {
-    let systemName: String
+/// Native-looking icon toggle button that sits in the edge-to-edge 28pt title strip.
+/// It has no background fill, so there is never a separate coloured band behind it.
+struct SidebarToggleButton: View {
+    let systemImage: String
     let help: LocalizedStringKey
     let action: () -> Void
     @State private var hovered = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.textTertiary)
-                .frame(width: 24, height: 22)
+            Image(systemName: systemImage)
+                .font(.system(size: 15))
+                .foregroundStyle(.secondary)
+                .frame(width: 30, height: TitlebarMetrics.height)
                 .background(
                     RoundedRectangle(cornerRadius: 5)
-                        .fill(hovered ? AnyShapeStyle(Theme.itemWash) : AnyShapeStyle(.clear))
+                        .fill(hovered ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
                 )
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
         .focusEffectDisabled()
         .onHover { hovered = $0 }
         .help(help)

@@ -88,7 +88,6 @@ struct FleecrApp: App {
         WindowGroup {
             RootView(model: appDelegate.model)
         }
-        .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             // fleecr is a single-window console, so New Window is not available.
