@@ -38,27 +38,9 @@ struct SSHAuthenticationRequest: Identifiable {
     var id: UUID { deviceID }
 }
 
-/// vertical = panes side by side with a vertical divider (iTerm2's convention).
-enum SplitAxis { case vertical, horizontal }
-
-/// Identifies one of the two panes in the ⌘D split. Used for focus tracking and
-/// keyboard-driven resize.
-enum SplitSide { case agent, shell }
-
 @MainActor
 final class AppModel: ObservableObject {
     @Published var devices: [Device]
-    /// All devices stay connected in parallel; this only filters the sidebar.
-    @Published var deviceFilter: UUID? {
-        didSet {
-            // Persisted so a relaunch restores the last selection (nil = All
-            // Devices, which removes the key). Every reset path — removing the
-            // filtered device, a notification jump to another device — goes
-            // through this property, so the stored value can never go stale.
-            UserDefaults.standard.set(deviceFilter?.uuidString, forKey: Self.deviceFilterKey)
-        }
-    }
-    private static let deviceFilterKey = "device.filter"
     @Published var sessions: [UUID: DeviceSessionState] = [:]
     @Published var selectedSpace: SpaceRef?
     @Published var selectedPane: PaneRef? {
@@ -75,29 +57,6 @@ final class AppModel: ObservableObject {
 
     @Published var showAddDevice = false
     @Published var showSearch = false
-    @Published var shellSplitAxis: SplitAxis?
-    /// Set by `reveal` when a jump lands while the ⌘D split is open, and consumed once the
-    /// main window is key again. Only an actual jump sets it: dismissing the search with
-    /// Escape never calls `reveal`, and the sidebar assigns `selectedPane` directly.
-    @Published var pendingSplitAgentFocus = false
-    /// The pane that currently holds the keyboard within the ⌘D split. Reset to
-    /// the agent side whenever the split closes so reopening it is predictable.
-    @Published var activeSplitSide: SplitSide = .agent
-    /// Persisted divider ratio for the ⌘D split, shared with the resize commands.
-    /// Deliberately not `@AppStorage`: that publishes only from inside a View, so the
-    /// menu commands would write UserDefaults without ever redrawing the split.
-    @Published var splitRatio: Double =
-        UserDefaults.standard.object(forKey: AppModel.splitRatioKey) as? Double ?? 0.5
-    {
-        didSet { UserDefaults.standard.set(splitRatio, forKey: AppModel.splitRatioKey) }
-    }
-    static let splitRatioKey = "terminal.splitRatio"
-    /// Live terminal views of the ⌘D split, used by menu commands to move focus.
-    /// Held weakly so the views are not kept alive by the model.
-    weak var splitAgentView: LocalProcessTerminalView?
-    weak var splitShellView: LocalProcessTerminalView?
-    /// In-window device panel (NSPopover crashes in ViewBridge on macOS 26+ betas).
-    @Published var showDevicePanel = false
     @Published var deviceToEdit: Device?
     @Published var sshAuthenticationRequest: SSHAuthenticationRequest?
     @Published var spaceToRename: SpaceEntry?
@@ -125,16 +84,8 @@ final class AppModel: ObservableObject {
     init() {
         let loaded = store.load()
         devices = loaded
-        // Restore the device filter only if that device still exists;
-        // otherwise fall back to Herdr's selected profile or All Devices.
-        if let raw = UserDefaults.standard.string(forKey: Self.deviceFilterKey),
-           let id = UUID(uuidString: raw),
-           loaded.contains(where: { $0.id == id }) {
-            deviceFilter = id
-        } else if let selectedProfileID = store.loadSelectedProfile(),
-                  loaded.contains(where: { $0.id == selectedProfileID }) {
-            deviceFilter = selectedProfileID
-        }
+        // Clear any legacy persisted device filter so the app is always in All Devices mode.
+        UserDefaults.standard.removeObject(forKey: "device.filter")
 
         store.startMonitoring { [weak self] in
             Task { @MainActor [weak self] in
@@ -167,13 +118,8 @@ final class AppModel: ObservableObject {
         session(deviceID).attachmentCapabilities.capabilities(for: agentKind)
     }
 
-    var filteredDevice: Device? {
-        deviceFilter.flatMap(device)
-    }
-
     private var devicesInScope: [Device] {
-        if let filtered = filteredDevice { return [filtered] }
-        return devices
+        devices
     }
 
     /// Aggregate connection state for the current scope (footer dot, hints).
@@ -422,7 +368,7 @@ final class AppModel: ObservableObject {
     /// nothing. ⌘K search and the New Space picker stay on `showsDeviceBadges`
     /// because search crosses all devices regardless of the filter.
     var showsRowDeviceBadges: Bool {
-        devices.count > 1 && deviceFilter == nil
+        devices.count > 1
     }
 
     // MARK: - Selection
@@ -449,9 +395,6 @@ final class AppModel: ObservableObject {
         for removedID in oldIDs.subtracting(newIDs) {
             stopSession(removedID)
             removeSSHPassword(for: removedID)
-            if deviceFilter == removedID {
-                setDeviceFilter(nil)
-            }
         }
 
         // 2. Prepare reconciled devices preserving cached osID
@@ -503,19 +446,6 @@ final class AppModel: ObservableObject {
         devices = reconciled
     }
 
-    func setDeviceFilter(_ id: UUID?) {
-        deviceFilter = id
-        store.saveSelectedProfile(id)
-        if let id, let space = selectedSpace, space.deviceID != id {
-            selectedSpace = visibleSpaces.first?.ref
-        } else if selectedSpace == nil {
-            selectedSpace = visibleSpaces.first?.ref
-        }
-        if let id, let selected = selectedPane, selected.deviceID != id {
-            selectedPane = preferredVisibleAgent()?.ref ?? firstVisiblePaneRef
-        }
-    }
-
     /// When jumping into a space, land on whoever still needs a look — not
     /// merely the first tab.
     private func preferredVisibleAgent() -> AgentEntry? {
@@ -530,25 +460,12 @@ final class AppModel: ObservableObject {
 
     /// Jump target used by the search sheet and by notification clicks.
     func reveal(_ ref: PaneRef) {
-        if let filter = deviceFilter, filter != ref.deviceID {
-            deviceFilter = nil
-        }
         let state = session(ref.deviceID)
         if let workspaceID = state.agents.first(where: { $0.paneID == ref.paneID })?.workspaceID
             ?? state.panes.first(where: { $0.paneID == ref.paneID })?.workspaceID {
             selectedSpace = SpaceRef(deviceID: ref.deviceID, workspaceID: workspaceID)
         }
         selectedPane = ref
-        // Only the search sheet needs the deferred request: its dismissal restores the
-        // parent window's previous responder after the view tree has asked for focus.
-        // `showSearch` is still true here — SearchView calls this before dismissing.
-        //
-        // Notification clicks deliberately do NOT arm it. With the app already frontmost
-        // there may be no key-window transition at all, so nothing would consume the flag
-        // and a later unrelated activation would cash it in, pulling the keyboard out of
-        // the shell. Those clicks get focus from the recreated attach and from the
-        // entry-change request instead.
-        if shellSplitAxis != nil, showSearch { pendingSplitAgentFocus = true }
     }
 
     func selectAgent(_ ref: PaneRef) {
@@ -691,10 +608,6 @@ final class AppModel: ObservableObject {
         )
 
         reconcileDevicesFromStore()
-
-        if let newDevice = devices.first(where: { $0.sshTarget == trimmedTarget && $0.session == resolvedSession }) {
-            setDeviceFilter(newDevice.id)
-        }
     }
 
     func saveSSHPassword(_ password: String, for request: SSHAuthenticationRequest) {
@@ -805,7 +718,6 @@ final class AppModel: ObservableObject {
         if sshAuthenticationRequest?.deviceID == device.id { sshAuthenticationRequest = nil }
         stopSession(device.id)
         devices.removeAll { $0.id == device.id }
-        if deviceFilter == device.id { deviceFilter = nil }
         if selectedSpace?.deviceID == device.id {
             selectedSpace = visibleSpaces.first(where: { $0.device.id != device.id })?.ref
         }
@@ -884,8 +796,7 @@ final class AppModel: ObservableObject {
             }
             if selectedPane == nil {
                 if let focusedPaneID = snapshot.focusedPaneID,
-                   paneIDs.contains(focusedPaneID),
-                   deviceFilter == nil || deviceFilter == deviceID {
+                   paneIDs.contains(focusedPaneID) {
                     let focused = PaneRef(deviceID: deviceID, paneID: focusedPaneID)
                     let focusedWorkspaceID = snapshot.panes?.first(where: { $0.paneID == focusedPaneID })?.workspaceID
                         ?? snapshot.agents.first(where: { $0.paneID == focusedPaneID })?.workspaceID
@@ -1249,33 +1160,62 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Creates a persistent shell tab in the current space.
+    /// Creates a persistent shell tab in the current space, or in the default space of the active device.
     func startNewTerminal() {
-        guard let space = currentSpace, let device = device(space.deviceID) else {
-            actionError = String(localized: "Create a space on this device before opening a terminal.")
+        if let space = currentSpace, let device = device(space.deviceID) {
+            startNewTerminal(device: device, workspaceID: space.workspaceID)
             return
         }
-        startNewTerminal(device: device, workspaceID: space.workspaceID)
+        guard let device = devices.first(where: { $0.isEnabled && $0.isLocal })
+            ?? devices.first(where: { $0.isEnabled })
+            ?? devices.first else {
+            actionError = String(localized: "No device available to open a terminal.")
+            return
+        }
+        if let firstWorkspace = session(device.id).workspaces.first {
+            startNewTerminal(device: device, workspaceID: firstWorkspace.workspaceID)
+        } else {
+            startNewTerminal(device: device, workspaceID: nil)
+        }
     }
 
     /// Creates a persistent shell tab on the selected Herdr device. Local and
     /// remote terminals use the same server-owned lifecycle and can be detached
     /// and reattached without killing the shell process.
-    func startNewTerminal(device: Device, workspaceID: String) {
+    func startNewTerminal(device: Device, workspaceID: String?) {
         Task {
             do {
-                let paneID = try await service(for: device).createTab(
+                let service = service(for: device)
+                let targetCWD = workspaceID.flatMap { workspaceCWD(deviceID: device.id, workspaceID: $0) }
+                let paneID = try await service.createTab(
                     workspaceID: workspaceID,
-                    cwd: workspaceCWD(deviceID: device.id, workspaceID: workspaceID),
+                    cwd: targetCWD,
                     label: nil
                 )
                 await refresh(device.id)
-                selectedSpace = SpaceRef(deviceID: device.id, workspaceID: workspaceID)
+                let resolvedWorkspaceID = workspaceID
+                    ?? session(device.id).panes.first(where: { $0.paneID == paneID })?.workspaceID
+                    ?? session(device.id).workspaces.first?.workspaceID
+                if let resolvedWorkspaceID {
+                    selectedSpace = SpaceRef(deviceID: device.id, workspaceID: resolvedWorkspaceID)
+                }
                 selectedPane = PaneRef(deviceID: device.id, paneID: paneID)
+                if session(device.id).panes.first(where: { $0.paneID == paneID }) == nil {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    await refresh(device.id)
+                }
             } catch {
                 actionError = actionErrorMessage(error, device: device)
             }
         }
     }
 
+    /// Creates a new space on the default device.
+    func createNewSpace() {
+        if let device = devices.first(where: { $0.isEnabled && $0.isLocal }) ?? devices.first(where: { $0.isEnabled }) ?? devices.first {
+            createNewSpace(on: device)
+        }
+    }
+
 }
+

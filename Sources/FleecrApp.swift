@@ -22,31 +22,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return .terminateLater
     }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            for window in sender.windows {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+        return true
+    }
+
+    static func openSettingsWindow() {
+        if let menu = NSApp.mainMenu {
+            for item in menu.items {
+                if let sub = item.submenu {
+                    for (index, subItem) in sub.items.enumerated() {
+                        if subItem.keyEquivalent == "," {
+                            sub.performActionForItem(at: index)
+                            if let action = subItem.action {
+                                NSApp.sendAction(action, to: subItem.target, from: subItem)
+                            }
+                            return
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 private struct AppModelFocusedValueKey: FocusedValueKey {
     typealias Value = AppModel
 }
 
-/// The split axis travels as its own focused value, not read off the model. `Commands`
-/// gets the AppModel by reference and never subscribes to its objectWillChange, so
-/// `focusedModel?.shellSplitAxis` was evaluated once and stuck: the menu items stayed
-/// disabled with a split open, and a disabled NSMenuItem does not fire its key
-/// equivalent. A value type changes identity, which does invalidate the commands body —
-/// that is also what lets the shortcuts follow the current axis.
-private struct SplitAxisFocusedValueKey: FocusedValueKey {
-    typealias Value = SplitAxis
-}
-
 extension FocusedValues {
     var appModel: AppModel? {
         get { self[AppModelFocusedValueKey.self] }
         set { self[AppModelFocusedValueKey.self] = newValue }
-    }
-
-    var splitAxis: SplitAxis? {
-        get { self[SplitAxisFocusedValueKey.self] }
-        set { self[SplitAxisFocusedValueKey.self] = newValue }
     }
 }
 
@@ -55,7 +67,6 @@ struct FleecrApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @AppStorage("app.theme") private var themePreference = "system"
     @FocusedValue(\.appModel) private var focusedModel
-    @FocusedValue(\.splitAxis) private var focusedSplitAxis
 
     init() {
         if ProcessInfo.processInfo.environment[SSHCredentialStore.askPassModeEnvironmentKey] == "1" {
@@ -64,6 +75,10 @@ struct FleecrApp: App {
         AppLanguage.synchronize()
         SSHCredentialStore.purgeAuthorizations()
         TerminalDefaults.registerBundledFonts()
+    }
+
+    private var activeModel: AppModel {
+        focusedModel ?? appDelegate.model
     }
 
     var body: some Scene {
@@ -79,115 +94,33 @@ struct FleecrApp: App {
         .commands {
             // fleecr is a single-window console, so New Window is not available.
             CommandGroup(replacing: .newItem) {
-                Button("New Terminal") { focusedModel?.startNewTerminal() }
+                let model = activeModel
+                Button("New Terminal") { model.startNewTerminal() }
                     .keyboardShortcut("t", modifiers: .command)
-                    .disabled(focusedModel == nil)
-                if let model = focusedModel,
-                   let deviceID = model.deviceFilter,
-                   let device = model.device(deviceID) {
+                if model.devices.count == 1, let device = model.devices.first {
                     Button("New Space") { model.createNewSpace(on: device) }
                         .keyboardShortcut("n", modifiers: [.command, .shift])
                 } else {
                     Menu("New Space") {
-                        ForEach(focusedModel?.devices ?? []) { device in
-                            Button(device.name) { focusedModel?.createNewSpace(on: device) }
+                        ForEach(model.devices) { device in
+                            Button(device.name) { model.createNewSpace(on: device) }
                         }
                     }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
-                    .disabled(focusedModel == nil)
                 }
             }
 
-            CommandMenu("Terminal") {
-                // Guarded on selectedAttachedEntry, not just on the model: with the placeholder
-                // on screen there is no SplitContainer to render into, so a split would
-                // be invisible yet leave shellSplitAxis non-nil — and the next ⌘W would
-                // "close" that phantom instead of the window.
-                Button("Split Vertically") { focusedModel?.shellSplitAxis = .vertical }
-                    .keyboardShortcut("d", modifiers: .command)
-                    .disabled(focusedModel?.selectedAttachedEntry == nil)
-                Button("Split Horizontally") { focusedModel?.shellSplitAxis = .horizontal }
-                    .keyboardShortcut("d", modifiers: [.command, .shift])
-                    .disabled(focusedModel?.selectedAttachedEntry == nil)
-
-                Divider()
-
-                // Eight items with FIXED shortcuts, enabled per axis — deliberately not
-                // four items whose shortcut follows the axis. Measured: `.disabled` IS
-                // revalidated when the menu opens, but a key equivalent already registered
-                // in the NSMenu is NOT reassigned when the commands body re-evaluates, so
-                // the arrows stayed frozen on the axis that was current at launch.
-                // Labels name the direction so no two rows read the same.
-                //
-                // Focus is directional and idempotent: the left/top pane is always the
-                // agent, the right/bottom one always the shell.
-                Button("Focus Left Pane") {
-                    if let model = focusedModel { focusSplitSide(.agent, in: model) }
-                }
-                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
-                .disabled(focusedSplitAxis != .vertical)
-                Button("Focus Right Pane") {
-                    if let model = focusedModel { focusSplitSide(.shell, in: model) }
-                }
-                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
-                .disabled(focusedSplitAxis != .vertical)
-                Button("Focus Top Pane") {
-                    if let model = focusedModel { focusSplitSide(.agent, in: model) }
-                }
-                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
-                .disabled(focusedSplitAxis != .horizontal)
-                Button("Focus Bottom Pane") {
-                    if let model = focusedModel { focusSplitSide(.shell, in: model) }
-                }
-                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
-                .disabled(focusedSplitAxis != .horizontal)
-
-                Divider()
-
-                // Resize moves the divider by 5% relative to the active pane.
-                Button("Widen Active Pane") {
-                    if let model = focusedModel { resizeSplit(grow: true, in: model) }
-                }
-                .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
-                .disabled(focusedSplitAxis != .vertical)
-                Button("Narrow Active Pane") {
-                    if let model = focusedModel { resizeSplit(grow: false, in: model) }
-                }
-                .keyboardShortcut(.leftArrow, modifiers: [.command, .control])
-                .disabled(focusedSplitAxis != .vertical)
-                Button("Grow Active Pane") {
-                    if let model = focusedModel { resizeSplit(grow: true, in: model) }
-                }
-                .keyboardShortcut(.downArrow, modifiers: [.command, .control])
-                .disabled(focusedSplitAxis != .horizontal)
-                Button("Shrink Active Pane") {
-                    if let model = focusedModel { resizeSplit(grow: false, in: model) }
-                }
-                .keyboardShortcut(.upArrow, modifiers: [.command, .control])
-                .disabled(focusedSplitAxis != .horizontal)
-            }
             CommandGroup(replacing: .saveItem) {
-                // ⌘W closes the split before the window. Server-owned panes
-                // close from their confirmed sidebar action instead.
-                Button(closeButtonTitle) {
-                    if let model = focusedModel, model.shellSplitAxis != nil {
-                        model.shellSplitAxis = nil
-                    } else {
-                        NSApp.keyWindow?.performClose(nil)
-                    }
+                Button("Close") {
+                    NSApp.keyWindow?.performClose(nil)
                 }
                 .keyboardShortcut("w", modifiers: .command)
             }
         }
 
         Settings {
-            SettingsView()
+            SettingsView(model: appDelegate.model)
         }
-    }
-
-    private var closeButtonTitle: String {
-        if focusedModel?.shellSplitAxis != nil { return String(localized: "Close Split") }
-        return String(localized: "Close")
     }
 
     static func applyTheme(_ preference: String) {
@@ -196,23 +129,6 @@ struct FleecrApp: App {
         case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
         default: NSApp.appearance = nil
         }
-    }
-
-    // MARK: - Split commands
-
-    private func focusSplitSide(_ side: SplitSide, in model: AppModel) {
-        guard model.shellSplitAxis != nil else { return }
-        let target = (side == .agent) ? model.splitAgentView : model.splitShellView
-        guard let target, let window = target.window else { return }
-        window.makeFirstResponder(target)
-    }
-
-    private func resizeSplit(grow: Bool, in model: AppModel) {
-        guard model.shellSplitAxis != nil else { return }
-        let step = 0.05
-        let signed = (model.activeSplitSide == .agent) ? step : -step
-        let delta = grow ? signed : -signed
-        model.splitRatio = min(0.8, max(0.2, model.splitRatio + delta))
     }
 
     private static func runSSHAskPass() -> Never {
@@ -229,18 +145,24 @@ struct FleecrApp: App {
 }
 
 struct SettingsView: View {
+    @ObservedObject var model: AppModel
+
     var body: some View {
         TabView {
+            DevicesSettingsView(model: model)
+                .tabItem { Label(String(localized: "Devices", defaultValue: "Devices"), systemImage: "server.rack") }
             AppearanceSettingsView()
                 .tabItem { Label("Appearance", systemImage: "paintbrush") }
             TerminalSettingsView()
                 .tabItem { Label("Terminal", systemImage: "terminal") }
+            ShortcutsSettingsView()
+                .tabItem { Label("Shortcuts", systemImage: "keyboard") }
             NotificationSettingsView()
                 .tabItem { Label("Notifications", systemImage: "bell") }
             AboutSettingsView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 420)
+        .frame(width: 520)
     }
 }
 
@@ -444,7 +366,7 @@ struct AboutSettingsView: View {
         Form {
             Text("fleecr — a native macOS console for herdr.")
                 .font(.system(size: 12.5))
-            Text("Devices are managed from the switcher in the sidebar footer.")
+            Text(String(localized: "Devices are managed from the Devices tab in Settings.", defaultValue: "Devices are managed from the Devices tab in Settings."))
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
         }

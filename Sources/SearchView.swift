@@ -261,9 +261,6 @@ struct SearchSheet: View {
         case .terminal(let entry):
             model.reveal(entry.ref)
         case .space(let entry):
-            if let filter = model.deviceFilter, filter != entry.device.id {
-                model.setDeviceFilter(nil)
-            }
             model.selectSpace(entry.ref)
         }
         dismiss()

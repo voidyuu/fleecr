@@ -2,6 +2,7 @@ import HerdrKit
 import SwiftUI
 
 struct RootView: View {
+    @Environment(\.openSettings) private var openSettings
     // Owned by AppDelegate so it outlives the window — see AppDelegate in FleecrApp.swift.
     @ObservedObject var model: AppModel
     // Deliberately not persisted: the app always launches with the sidebar visible.
@@ -20,24 +21,7 @@ struct RootView: View {
                 DetailView(model: model, sidebarCollapsed: $sidebarCollapsed)
             }
             .animation(.easeInOut(duration: 0.2), value: sidebarCollapsed)
-
-            // In-window device panel; NSPopover throws in ViewBridge on macOS 26+ betas.
-            if model.showDevicePanel {
-                Color.black.opacity(0.001)
-                    .ignoresSafeArea()
-                    .onTapGesture { model.showDevicePanel = false }
-                DevicePopover(model: model, isPresented: $model.showDevicePanel)
-                    .padding(.leading, 10)
-                    .padding(.bottom, 46)
-                    .transition(.scale(scale: 0.96, anchor: .bottomLeading).combined(with: .opacity))
-                    .background(
-                        Button("") { model.showDevicePanel = false }
-                            .keyboardShortcut(.cancelAction)
-                            .hidden()
-                    )
-            }
         }
-        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: model.showDevicePanel)
         .background(
             Button("") { sidebarCollapsed.toggle() }
                 .keyboardShortcut("b", modifiers: .command)
@@ -48,12 +32,30 @@ struct RootView: View {
                 .keyboardShortcut("k", modifiers: .command)
                 .hidden()
         )
+        .background(
+            Button("") { model.startNewTerminal() }
+                .keyboardShortcut("t", modifiers: .command)
+                .hidden()
+        )
+        .background(
+            Button("") { openSettings() }
+                .keyboardShortcut(",", modifiers: .command)
+                .hidden()
+        )
+        .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+            openSettings()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleSidebar)) { _ in
+            sidebarCollapsed.toggle()
+        }
         .focusedSceneValue(\.appModel, model)
-        .focusedSceneValue(\.splitAxis, model.shellSplitAxis)
         .sheet(isPresented: $model.showSearch) { SearchSheet(model: model) }
         .ignoresSafeArea(.container, edges: .top)
         .frame(minWidth: 980, minHeight: 620)
-        .onAppear { model.start() }
+        .onAppear {
+            model.start()
+            ShortcutDispatcher.shared.install(model: model)
+        }
         .sheet(isPresented: $model.showAddDevice) { AddDeviceSheet(model: model) }
         .sheet(item: $model.spaceToRename) { entry in RenameSpaceSheet(model: model, entry: entry) }
         .sheet(item: $model.agentToRename) { entry in RenameAgentSheet(model: model, entry: entry) }
@@ -107,18 +109,6 @@ struct DetailView: View {
                 .zIndex(1)
             Rectangle().fill(Theme.hairline).frame(height: 1)
             detailContent
-                // Losing the selected agent tears the SplitContainer down without
-                // resetting the axis, which would leave the same phantom split.
-                //
-                // Load-bearing beyond that: this is the ONLY thing that clears the axis
-                // when the agent goes away. `dismantleNSView` nils the coordinator's
-                // onExit before killing the shell, so the shell's own onExit never fires
-                // on teardown. Remove this and "split open with no agent selected"
-                // becomes reachable, which is a state a deferred focus request can be
-                // armed into with nothing left in the tree to consume it.
-                .onChange(of: model.selectedAttachedEntry?.id) { _, id in
-                    if id == nil { model.shellSplitAxis = nil }
-                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.contentBackground.ignoresSafeArea())
@@ -244,7 +234,6 @@ struct DetailView: View {
     @State private var endedAttachCode: Int32?
     @State private var attachRetry = 0
     @State private var uploadingAttachment = false
-    @State private var splitTracker = SplitFocusTracker()
 
     @ViewBuilder
     private var terminal: some View {
@@ -261,42 +250,12 @@ struct DetailView: View {
                     agentKind: agentEntry.agent.agentKindRaw
                 )
             }()
-            SplitContainer(
-                axis: model.shellSplitAxis,
-                activeSide: model.activeSplitSide,
-                ratio: $model.splitRatio
-            ) {
-                ZStack {
-                    AttachTerminalView(
-                        device: entry.device,
-                        target: entry.attachTarget,
-                        serverVersion: model.serverVersion(deviceID: entry.device.id),
-                        attachmentCapabilities: attachmentCapabilities,
-                        fontName: terminalFontName,
-                        fontSize: terminalFontSize,
-                        thinStrokes: terminalThinStrokes,
-                        fontWeight: terminalFontWeight,
-                        lineSpacing: terminalLineSpacing,
-                        dark: colorScheme == .dark,
-                        mouseReporting: terminalMouseReporting,
-                        onAttachmentError: { model.actionError = $0 },
-                        onAttachmentUploadingChanged: { uploadingAttachment = $0 },
-                        onExit: { code in
-                            endedAttachKey = entry.id
-                            endedAttachCode = code
-                        },
-                        onViewReady: {
-                            splitTracker.agentView = $0
-                            model.splitAgentView = $0
-                        }
-                    )
-                        .id("attach-\(entry.id)-\(colorScheme)-\(attachRetry)")
-                    if endedAttachKey == entry.id {
-                        attachEndedOverlay(entry)
-                    }
-                }
-            } second: {
-                ShellTerminalView(
+            ZStack {
+                AttachTerminalView(
+                    device: entry.device,
+                    target: entry.attachTarget,
+                    serverVersion: model.serverVersion(deviceID: entry.device.id),
+                    attachmentCapabilities: attachmentCapabilities,
                     fontName: terminalFontName,
                     fontSize: terminalFontSize,
                     thinStrokes: terminalThinStrokes,
@@ -304,61 +263,28 @@ struct DetailView: View {
                     lineSpacing: terminalLineSpacing,
                     dark: colorScheme == .dark,
                     mouseReporting: terminalMouseReporting,
-                    onExit: { _ in model.shellSplitAxis = nil },
-                    onViewReady: {
-                        splitTracker.shellView = $0
-                        model.splitShellView = $0
+                    onAttachmentError: { model.actionError = $0 },
+                    onAttachmentUploadingChanged: { uploadingAttachment = $0 },
+                    onExit: { code in
+                        endedAttachKey = entry.id
+                        endedAttachCode = code
                     }
                 )
-                    // Deliberately not keyed on colorScheme like the attach above:
-                    // a new id tears the view down and kills the shell with whatever
-                    // was running in it, and unlike a herdr pane a local shell has no
-                    // server-side state to reattach to. updateNSView re-themes it.
-                    .id("shell")
+                .id("attach-\(entry.id)-\(colorScheme)-\(attachRetry)")
+                if endedAttachKey == entry.id {
+                    attachEndedOverlay(entry)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.terminalBackground)
             .overlay(alignment: .bottomTrailing) {
                 if uploadingAttachment { uploadIndicator }
             }
-            .onAppear {
-                // Single source of truth: the tracker writes straight into the model
-                // instead of holding its own copy for a second onChange to mirror.
-                splitTracker.onSideChanged = { model.activeSplitSide = $0 }
-                splitTracker.start()
-            }
             .onChange(of: entry.id) { _, _ in
                 endedAttachKey = nil
                 uploadingAttachment = false
-                if model.shellSplitAxis != nil { focusTerminal(model.splitAgentView) }
-            }
-            // Keyed on the window becoming key rather than on a delay: that is the event
-            // that follows the sheet's responder restore. Filtered to the terminal's own
-            // window and consumed no matter which window it was, so a pending request can
-            // never survive to a later, unrelated activation — coming back from ⌘Tab or
-            // closing Settings would otherwise yank the keyboard into a live pane.
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-                guard model.pendingSplitAgentFocus else { return }
-                model.pendingSplitAgentFocus = false
-                guard let window = note.object as? NSWindow,
-                      window === model.splitAgentView?.window
-                else { return }
-                focusTerminal(model.splitAgentView)
-            }
-            // Splitting moves the keyboard to the shell, so closing the split has to
-            // hand it back — by ⌘W or by the shell exiting on its own. Reset the
-            // tracked side to the agent so the next split starts predictably.
-            .onChange(of: model.shellSplitAxis) { _, axis in
-                if axis == nil {
-                    model.activeSplitSide = .agent
-                    model.pendingSplitAgentFocus = false
-                    focusRemainingTerminal()
-                }
             }
         } else {
-            // The .onReceive below only exists on the branch above, so a request armed
-            // while no pane is selected would have no consumer and would be cashed in by
-            // some later activation. Revealing a pane that has since gone away lands here.
             VStack(spacing: 10) {
                 Image(systemName: "terminal")
                     .font(.system(size: 28, weight: .light))
@@ -375,7 +301,6 @@ struct DetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.terminalBackground)
-            .onAppear { model.pendingSplitAgentFocus = false }
         }
     }
 

@@ -396,8 +396,7 @@ final class LineBreakTerminalView: AppTerminalView {
         return super.performKeyEquivalent(with: event)
     }
 
-    /// Mac Delete is Backspace (keyCode 51). ⌥⌘ arrows move split focus and
-    /// are left alone; ⌘A/⌘E/⌘W and the other app chords never match here.
+    /// Mac Delete is Backspace (keyCode 51); ⌘A/⌘E/⌘W and the other app chords never match here.
     private func ptyBytes(forMacEditingKey event: NSEvent) -> String? {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let commandOnly = modifiers.contains(.command)
@@ -722,33 +721,6 @@ extension LineBreakTerminalView: TerminalSurfaceClipboardConfirmationDelegate {
     }
 }
 
-func focusTerminal(_ view: LocalProcessTerminalView?) {
-    DispatchQueue.main.async {
-        guard let view, let window = view.window else { return }
-        window.makeFirstResponder(view)
-    }
-}
-
-func focusRemainingTerminal() {
-    DispatchQueue.main.async {
-        guard let window = NSApp.keyWindow,
-              let terminal = window.contentView?.firstTerminalDescendant()
-        else { return }
-        guard window.firstResponder === window else { return }
-        window.makeFirstResponder(terminal)
-    }
-}
-
-private extension NSView {
-    func firstTerminalDescendant() -> LocalProcessTerminalView? {
-        if let terminal = self as? LocalProcessTerminalView { return terminal }
-        for subview in subviews {
-            if let found = subview.firstTerminalDescendant() { return found }
-        }
-        return nil
-    }
-}
-
 /// Embeds a Ghostty terminal running a direct agent or ordinary-terminal attach.
 struct AttachTerminalView: NSViewRepresentable {
     let device: Device
@@ -907,80 +879,3 @@ func applyTerminalAppearance(
     view.terminalController.setColorScheme(dark ? .dark : .light)
 }
 
-struct ShellTerminalView: NSViewRepresentable {
-    var fontName: String = ""
-    var fontSize: Double = TerminalDefaults.defaultFontSize
-    var thinStrokes: Bool = true
-    var fontWeight: Double = TerminalDefaults.defaultFontWeight
-    var lineSpacing: Double = TerminalDefaults.defaultLineSpacing
-    var dark: Bool = false
-    var mouseReporting: Bool = TerminalDefaults.defaultMouseReporting
-    var onExit: ((Int32?) -> Void)? = nil
-    var onViewReady: ((LocalProcessTerminalView) -> Void)? = nil
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> LocalProcessTerminalView {
-        let view = LineBreakTerminalView()
-        view.processDelegate = context.coordinator
-        context.coordinator.onExit = onExit
-        applyTerminalAppearance(
-            view,
-            fontName: fontName,
-            fontSize: fontSize,
-            thinStrokes: thinStrokes,
-            fontWeight: fontWeight,
-            lineSpacing: lineSpacing,
-            dark: dark,
-            mouseReporting: mouseReporting
-        )
-
-        var environment = ProcessInfo.processInfo.environment
-        environment["TERM"] = "xterm-256color"
-        environment["COLORTERM"] = "truecolor"
-        environment["LANG"] = "en_US.UTF-8"
-        view.startProcess(
-            executable: "/bin/sh",
-            args: ["-c", "cd \"$HOME\"; exec \"${SHELL:-/bin/zsh}\" -l"],
-            environment: environment
-        )
-        DispatchQueue.main.async { [weak view] in
-            guard let view, let window = view.window else { return }
-            window.makeFirstResponder(view)
-        }
-        onViewReady?(view)
-        return view
-    }
-
-    func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
-        context.coordinator.onExit = onExit
-        applyTerminalAppearance(
-            nsView,
-            fontName: fontName,
-            fontSize: fontSize,
-            thinStrokes: thinStrokes,
-            fontWeight: fontWeight,
-            lineSpacing: lineSpacing,
-            dark: dark,
-            mouseReporting: mouseReporting
-        )
-    }
-
-    static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {
-        coordinator.onExit = nil
-        nsView.terminate(signal: SIGHUP)
-    }
-
-    final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
-        var onExit: ((Int32?) -> Void)?
-
-        func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
-        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
-        func hostCurrentDirectoryUpdate(source: LocalProcessTerminalView, directory: String?) {}
-        func processTerminated(source: LocalProcessTerminalView, exitCode: Int32?) {
-            let callback = onExit
-            onExit = nil
-            DispatchQueue.main.async { callback?(exitCode) }
-        }
-    }
-}

@@ -21,7 +21,6 @@ struct VisualEffectView: NSViewRepresentable {
 struct SidebarView: View {
     @ObservedObject var model: AppModel
     @Binding var collapsed: Bool
-    @State private var deviceButtonHovered = false
     @State private var draggingSpaceID: String?
     @State private var spaceDrop: (id: String, after: Bool)?
     @State private var draggingAgentID: String?
@@ -45,8 +44,7 @@ struct SidebarView: View {
             Spacer().frame(height: 8)
 
             VStack(spacing: 1) {
-                // Persistent Herdr terminals are listed under TERMINALS below;
-                // the ⌘D split beside an agent is separate.
+                // Persistent Herdr terminals are listed under TERMINALS below.
                 actionRow(icon: "terminal", label: "New Terminal") {
                     model.startNewTerminal()
                 }
@@ -65,7 +63,7 @@ struct SidebarView: View {
                     // never fired. The trailing menu does not toggle the section.
                     groupHeader("Spaces", expanded: $spacesExpanded) {
                         Group {
-                            if let deviceID = model.deviceFilter, let device = model.device(deviceID) {
+                            if model.devices.count == 1, let device = model.devices.first {
                                 Button { model.createNewSpace(on: device) } label: {
                                     Image(systemName: "folder.badge.plus")
                                         .font(.system(size: 11.5))
@@ -362,50 +360,17 @@ struct SidebarView: View {
     }
 }
 
-    // MARK: - Footer (device filter)
+    // MARK: - Footer (status & settings)
 
     private var footer: some View {
-        HStack(spacing: 6) {
-            Button {
-                model.showDevicePanel.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    if let device = model.filteredDevice {
-                        DeviceIcon(osID: device.osID, isLocal: device.isLocal, size: 10)
-                            .foregroundStyle(Theme.textSecondary)
-                    } else {
-                        Image(systemName: "square.stack.3d.up")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                    Text(model.filteredDevice?.name ?? "All Devices")
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(Theme.text)
-                    Circle()
-                        .fill(connectionDotColor)
-                        .frame(width: 6, height: 6)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 8.5, weight: .semibold))
-                        .foregroundStyle(Theme.textGhost)
-                }
-                .padding(.horizontal, 8)
-                .frame(height: 28)
-                .contentShape(RoundedRectangle(cornerRadius: 6))
-            }
-            .buttonStyle(.plain)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(deviceButtonHovered || model.showDevicePanel
-                          ? AnyShapeStyle(Theme.itemWashSelected)
-                          : AnyShapeStyle(Theme.itemWash))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Theme.hairline, lineWidth: deviceButtonHovered ? 1 : 0)
-            )
-            .scaleEffect(deviceButtonHovered ? 1.04 : 1.0)
-            .animation(.spring(response: 0.28, dampingFraction: 0.55), value: deviceButtonHovered)
-            .onHover { deviceButtonHovered = $0 }
+        HStack(spacing: 7) {
+            Circle()
+                .fill(connectionDotColor)
+                .frame(width: 6, height: 6)
+            Text(connectionStatusText)
+                .font(.system(size: 11.5))
+                .foregroundStyle(Theme.textTertiary)
+                .lineLimit(1)
 
             Spacer()
 
@@ -414,12 +379,23 @@ struct SidebarView: View {
                     .font(.system(size: 12.5))
                     .foregroundStyle(Theme.textTertiary)
                     .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .focusEffectDisabled()
+            .help("Settings (⌘,)")
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .frame(height: 40)
+    }
+
+    private var connectionStatusText: String {
+        switch model.connection {
+        case .connected: return String(localized: "Connected")
+        case .connecting: return String(localized: "Connecting…")
+        case .failed(let reason): return reason
+        case .idle: return String(localized: "Idle")
+        }
     }
 
     private var connectionDotColor: Color {
@@ -455,193 +431,6 @@ struct TitlebarIconButton: View {
         .focusEffectDisabled()
         .onHover { hovered = $0 }
         .help(help)
-    }
-}
-
-/// Custom device switcher popover, matching the DeviceSwitcher design artboard:
-/// two-line device rows with OS icon, status dot, and a check on the current device.
-struct DevicePopover: View {
-    @ObservedObject var model: AppModel
-    @Binding var isPresented: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text("DEVICES")
-                .font(.system(size: 10.5, weight: .medium))
-                .kerning(0.3)
-                .foregroundStyle(Theme.textTertiary)
-                .padding(.horizontal, 9)
-                .frame(height: 24, alignment: .leading)
-
-            // aggregate view across every connected device
-            Button {
-                isPresented = false
-                model.setDeviceFilter(nil)
-            } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "square.stack.3d.up")
-                        .font(.system(size: 13))
-                        .foregroundStyle(model.deviceFilter == nil ? Theme.text : Theme.textSecondary)
-                        .frame(width: 16)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("All Devices")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.text)
-                        Text(String(localized: "\(model.devices.count) devices · \(connectedCount) connected"))
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-                    Spacer(minLength: 0)
-                    if model.deviceFilter == nil {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Theme.text)
-                    }
-                }
-                .padding(.horizontal, 9)
-                .frame(height: 42)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(SidebarRowButtonStyle(selected: model.deviceFilter == nil))
-
-            ForEach(model.devices) { device in
-                DevicePopoverRow(
-                    device: device,
-                    isActive: device.id == model.deviceFilter,
-                    connection: model.session(device.id).connection
-                ) {
-                    isPresented = false
-                    model.setDeviceFilter(device.id)
-                }
-                .contextMenu {
-                    if !device.isLocal {
-                        Button(device.isEnabled ? String(localized: "Disable Machine") : String(localized: "Enable Machine")) {
-                            model.toggleDeviceEnabled(device)
-                        }
-                        Divider()
-                        Button(String(localized: "Edit \(device.name)…")) {
-                            isPresented = false
-                            model.deviceToEdit = device
-                        }
-                        Button(String(localized: "Remove \(device.name)"), role: .destructive) {
-                            isPresented = false
-                            model.removeDevice(device)
-                        }
-                    }
-                }
-            }
-
-            Rectangle()
-                .fill(Theme.hairline)
-                .frame(height: 1)
-                .padding(.vertical, 4)
-                .padding(.horizontal, 6)
-
-            actionRow(icon: "plus", label: "Add Device…") {
-                isPresented = false
-                model.showAddDevice = true
-            }
-        }
-        .padding(5)
-        .frame(width: 252)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Theme.hairline, lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
-    }
-
-    private var connectedCount: Int {
-        model.devices.filter {
-            if case .connected = model.session($0.id).connection { return true }
-            return false
-        }.count
-    }
-
-    private func actionRow(icon: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                Image(systemName: icon)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Theme.textSecondary)
-                    .frame(width: 16)
-                Text(label)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.textSecondary)
-                Spacer()
-            }
-            .padding(.horizontal, 9)
-            .frame(height: 30)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(SidebarRowButtonStyle())
-    }
-}
-
-struct DevicePopoverRow: View {
-    let device: Device
-    let isActive: Bool
-    let connection: ConnectionState
-    let action: () -> Void
-    @State private var hovered = false
-
-    private var dotColor: Color {
-        if !device.isEnabled { return Theme.textGhost }
-        switch connection {
-        case .connected: return Theme.success
-        case .connecting: return Theme.warning
-        case .failed: return Theme.danger
-        case .idle: return Theme.textGhost
-        }
-    }
-
-    private var subtitleText: String {
-        if !device.isEnabled {
-            return String(localized: "Disabled · \(device.localizedSubtitle)")
-        }
-        return device.localizedSubtitle
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 9) {
-                DeviceIcon(osID: device.osID, isLocal: device.isLocal, size: 13)
-                    .foregroundStyle(isActive ? Theme.text : Theme.textSecondary)
-                    .frame(width: 16)
-                    .opacity(device.isEnabled ? 1 : 0.4)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text(device.name)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.text)
-                            .opacity(device.isEnabled ? 1 : 0.6)
-                        Circle()
-                            .fill(dotColor)
-                            .frame(width: 6, height: 6)
-                    }
-                    Text(subtitleText)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                if isActive {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                }
-            }
-            .padding(.horizontal, 9)
-            .frame(height: 42)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(hovered || isActive ? AnyShapeStyle(Theme.itemWashSelected) : AnyShapeStyle(.clear))
-        )
-        .onHover { hovered = $0 }
     }
 }
 
