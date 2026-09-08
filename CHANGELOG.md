@@ -5,6 +5,26 @@ on [Keep a Changelog](https://keepachangelog.com); versions follow semver.
 Release automation extracts the matching section for GitHub release notes and
 the Sparkle update description — a release without a section here fails CI.
 
+## [Unreleased]
+
+### Changed
+- Naming now belongs to the backend: space and tab names shown in the sidebar
+  are exactly the labels herdr reports, and every rename writes through
+  herdr's own `workspace.rename` / `tab.rename` RPCs — the same ones the herdr
+  TUI uses — so herdrm, the herdr TUI, and `herdr api snapshot` always agree.
+  Renames made in the herdr TUI show up here automatically, and vice versa.
+- The app no longer auto-renames spaces to follow the first terminal's
+  directory. herdr names a space itself when it is created; only an explicit
+  rename (here or in the TUI) changes the label afterwards.
+- Rename Agent now edits the tab's stored name instead of the composed display
+  title, so a rename no longer bakes the "2 · pi › …" index prefix or the
+  terminal's OSC title into the backend label.
+
+### Added
+- Terminals can be renamed from the sidebar context menu. The tab label is
+  written to herdr and displayed over the pane's OSC title, so renames are
+  always visible.
+
 ## [0.5.3] - 2026-08-29
 
 ### Added

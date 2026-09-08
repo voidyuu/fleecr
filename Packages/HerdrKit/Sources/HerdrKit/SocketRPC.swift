@@ -40,16 +40,18 @@ public struct SocketRPC: Sendable {
     public func events(kinds: [String] = HerdrEvent.allKinds) -> AsyncThrowingStream<HerdrEvent, Error> {
         let path = socketPath
         return AsyncThrowingStream { continuation in
+            let socketBox = AtomicFD()
             let task = Task.detached(priority: .utility) {
                 var fd: Int32 = -1
                 do {
                     fd = try Self.connect(path: path)
+                    socketBox.set(fd)
                     let subs = JSONValue.object([
                         "subscriptions": .array(kinds.map { .object(["type": .string($0)]) })
                     ])
                     try Self.writeLine(fd: fd, data: Self.encodeRequest(id: "events", method: "events.subscribe", params: subs))
-                    _ = try Self.readLine(fd: fd, timeoutSeconds: 15) // subscribe ack
                     var buffer = Data()
+                    _ = try Self.readLine(fd: fd, timeoutSeconds: 15, buffer: &buffer) // subscribe ack
                     while !Task.isCancelled {
                         guard let line = try Self.readLine(fd: fd, timeoutSeconds: nil, buffer: &buffer) else { break }
                         guard !line.isEmpty else { continue }
@@ -67,7 +69,10 @@ public struct SocketRPC: Sendable {
                 }
                 if fd >= 0 { close(fd) }
             }
-            continuation.onTermination = { _ in task.cancel() }
+            continuation.onTermination = { _ in
+                task.cancel()
+                socketBox.shutdown()
+            }
         }
     }
 
@@ -165,12 +170,10 @@ public struct SocketRPC: Sendable {
             buffer.removeSubrange(...index)
             return Data(line)
         }
+        var tv = timeval(tv_sec: timeoutSeconds.map(Int.init) ?? 0, tv_usec: 0)
+        _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
         var chunk = [UInt8](repeating: 0, count: 65536)
         while true {
-            if let timeoutSeconds {
-                var tv = timeval(tv_sec: Int(timeoutSeconds), tv_usec: 0)
-                _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-            }
             let count = read(fd, &chunk, chunk.count)
             if count == 0 { return buffer.isEmpty ? nil : buffer }
             if count < 0 {
@@ -183,6 +186,31 @@ public struct SocketRPC: Sendable {
                 buffer.removeSubrange(...index)
                 return Data(line)
             }
+        }
+    }
+}
+
+private final class AtomicFD: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fd: Int32 = -1
+    private var isTerminated = false
+
+    func set(_ newFd: Int32) {
+        lock.lock()
+        defer { lock.unlock() }
+        if isTerminated {
+            Darwin.shutdown(newFd, SHUT_RDWR)
+        } else {
+            fd = newFd
+        }
+    }
+
+    func shutdown() {
+        lock.lock()
+        defer { lock.unlock() }
+        isTerminated = true
+        if fd >= 0 {
+            Darwin.shutdown(fd, SHUT_RDWR)
         }
     }
 }

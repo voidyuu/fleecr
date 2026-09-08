@@ -26,8 +26,11 @@ enum Theme {
     static let textGhost = dynamic(hex(0xA4A4A4), hex(0x575757))
 
     // accent + status
-    static let accent = dynamic(hex(0xC85F44), hex(0xE2795B))
-    static let accentWash = dynamic(hex(0xC85F44, alpha: 0.12), hex(0xE2795B, alpha: 0.14))
+    /// Follows the user's macOS system accent color (System Settings → Appearance
+    /// → Accent color), adaptive across light/dark.
+    static let accent = Color(nsColor: .controlAccentColor)
+    /// System accent with a soft translucent wash.
+    static let accentWash = Color(nsColor: NSColor.controlAccentColor.withAlphaComponent(0.12))
     static let working = dynamic(hex(0x2563EB), hex(0x3B82F6))
     static let success = dynamic(hex(0x2FA35F), hex(0x62C987))
     static let warning = dynamic(hex(0xB8862E), hex(0xE0B36A))

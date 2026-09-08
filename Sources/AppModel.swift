@@ -61,6 +61,7 @@ final class AppModel: ObservableObject {
     @Published var sshAuthenticationRequest: SSHAuthenticationRequest?
     @Published var spaceToRename: SpaceEntry?
     @Published var agentToRename: AgentEntry?
+    @Published var terminalToRename: TerminalEntry?
     /// Transient action failures: shown as an alert, never by tearing down sessions.
     @Published var actionError: String?
 
@@ -74,8 +75,6 @@ final class AppModel: ObservableObject {
 
     private let store = DeviceStore()
     private var services: [UUID: HerdrService] = [:]
-    private var pendingWorkspaceRenames: Set<String> = []
-    private var autoNamedWorkspaces: Set<String> = []
     private var sessionTasks: [UUID: Task<Void, Never>] = [:]
     private var cwdPollTasks: [UUID: Task<Void, Never>] = [:]
     private var refreshDebounces: [UUID: Task<Void, Never>] = [:]
@@ -139,6 +138,9 @@ final class AppModel: ObservableObject {
         let device: Device
         let agent: AgentInfo
         let tabLabel: String?
+        /// The tab's stored backend name — the string `tab.rename` owns. Nil
+        /// while herdr only composes a display label ("2 · pi › …").
+        let tabName: String?
 
         var id: String { "\(device.id.uuidString)-\(agent.paneID)" }
         var ref: PaneRef { PaneRef(deviceID: device.id, paneID: agent.paneID) }
@@ -146,10 +148,12 @@ final class AppModel: ObservableObject {
     }
 
     func agentEntry(device: Device, agent: AgentInfo) -> AgentEntry {
-        AgentEntry(
+        let tab = session(device.id).tabs.first { $0.tabID == agent.tabID }
+        return AgentEntry(
             device: device,
             agent: agent,
-            tabLabel: session(device.id).tabs.first { $0.tabID == agent.tabID }?.customLabel
+            tabLabel: tab?.customLabel,
+            tabName: tab?.renameSeed(agentKind: agent.agentKindRaw)
         )
     }
 
@@ -163,12 +167,15 @@ final class AppModel: ObservableObject {
         var ref: PaneRef { PaneRef(deviceID: device.id, paneID: pane.paneID) }
 
         var title: String {
+            // The backend-stored tab label (herdr composes one, or someone
+            // renamed it) wins over the pane's OSC title so a rename is always
+            // visible; then the OSC title; then the directory.
+            if let label = tab?.customLabel, !label.isEmpty {
+                return label
+            }
             if let terminalTitle = pane.terminalTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
                !terminalTitle.isEmpty {
                 return terminalTitle
-            }
-            if let label = tab?.customLabel {
-                return label
             }
             if let cwd = pane.cwd, !cwd.isEmpty {
                 let basename = URL(fileURLWithPath: cwd).lastPathComponent
@@ -738,20 +745,10 @@ final class AppModel: ObservableObject {
         guard let device = device(deviceID), let service = services[deviceID] else { return }
         do {
             let snapshot = try await service.snapshot()
-            let previousWorkspaces = sessions[deviceID]?.workspaces ?? []
-            let previousCWDs = sessions[deviceID]?.workspaceCWDs ?? [:]
             let workspaceCWDs: [String: String] = Dictionary(uniqueKeysWithValues: snapshot.workspaces.compactMap { workspace in
                 guard let cwd = snapshot.workspaceCWD(workspaceID: workspace.workspaceID) else { return nil }
                 return (workspace.workspaceID, cwd)
             })
-            syncWorkspaceNames(
-                deviceID: deviceID,
-                service: service,
-                workspaces: snapshot.workspaces,
-                previousWorkspaces: previousWorkspaces,
-                previousCWDs: previousCWDs,
-                currentCWDs: workspaceCWDs
-            )
             unreadAgents = AgentUnread.applying(
                 previous: previousStatuses[deviceID] ?? [:],
                 agents: snapshot.agents,
@@ -810,49 +807,6 @@ final class AppModel: ObservableObject {
             }
         } catch {
             sessions[deviceID]?.connection = .failed(error.localizedDescription)
-        }
-    }
-
-    /// Default space names follow the first terminal's cwd; an explicitly
-    /// renamed space remains untouched once its label no longer matches the
-    /// previous directory name.
-    private func syncWorkspaceNames(
-        deviceID: UUID,
-        service: HerdrService,
-        workspaces: [WorkspaceInfo],
-        previousWorkspaces: [WorkspaceInfo],
-        previousCWDs: [String: String],
-        currentCWDs: [String: String]
-    ) {
-        let previousLabels = Dictionary(uniqueKeysWithValues: previousWorkspaces.map { ($0.workspaceID, $0.label) })
-        for workspace in workspaces {
-            guard let cwd = currentCWDs[workspace.workspaceID] else { continue }
-            let name = URL(fileURLWithPath: cwd).lastPathComponent
-            guard !name.isEmpty, name != "/", name != workspace.label else { continue }
-            let oldName = previousCWDs[workspace.workspaceID].map {
-                URL(fileURLWithPath: $0).lastPathComponent
-            }
-            let defaultLabels = [
-                "Space \(workspace.number)",
-                "Workspace \(workspace.number)",
-                String(workspace.number)
-            ]
-            let key = "\(deviceID.uuidString):\(workspace.workspaceID)"
-            let followsDirectory = oldName != nil && previousLabels[workspace.workspaceID] == oldName
-            guard autoNamedWorkspaces.contains(key)
-                || defaultLabels.contains(workspace.label)
-                || followsDirectory else { continue }
-            guard pendingWorkspaceRenames.insert(key).inserted else { continue }
-            Task { [weak self] in
-                do {
-                    try await service.renameWorkspace(workspaceID: workspace.workspaceID, label: name)
-                    self?.autoNamedWorkspaces.insert(key)
-                    self?.pendingWorkspaceRenames.remove(key)
-                    await self?.refresh(deviceID)
-                } catch {
-                    self?.pendingWorkspaceRenames.remove(key)
-                }
-            }
         }
     }
 
@@ -987,10 +941,11 @@ final class AppModel: ObservableObject {
 
     // MARK: - Actions
 
+    /// Renames a space in the backend (`workspace.rename`); herdr is the sole
+    /// owner of space names, so herdrm never writes one on its own.
     func renameSpace(_ entry: SpaceEntry, label: String) {
         let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !label.isEmpty, label != entry.workspace.label else { return }
-        autoNamedWorkspaces.remove("\(entry.device.id.uuidString):\(entry.workspace.workspaceID)")
         Task {
             do {
                 try await service(for: entry.device).renameWorkspace(
@@ -1004,13 +959,36 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Renames an agent's tab in the backend (`tab.rename`) — the same RPC the
+    /// herdr TUI's rename uses, so both UIs show the same name afterwards.
     func renameAgent(_ entry: AgentEntry, name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != entry.title else { return }
+        guard !name.isEmpty, name != entry.tabName else { return }
         Task {
             do {
                 try await service(for: entry.device).renameTab(
                     tabID: entry.agent.tabID,
+                    label: name
+                )
+                await refresh(entry.device.id)
+            } catch {
+                actionError = actionErrorMessage(error, device: entry.device)
+            }
+        }
+    }
+
+    /// Renames a terminal tab in the backend (`tab.rename`), matching the
+    /// herdr TUI's tab rename.
+    func renameTerminal(_ entry: TerminalEntry, name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let tabID = entry.pane.tabID,
+              !name.isEmpty,
+              name != entry.tab?.renameSeed(agentKind: nil)
+        else { return }
+        Task {
+            do {
+                try await service(for: entry.device).renameTab(
+                    tabID: tabID,
                     label: name
                 )
                 await refresh(entry.device.id)
@@ -1135,12 +1113,13 @@ final class AppModel: ObservableObject {
     }
 
     /// Creates a default Herdr space, whose root pane is its initial terminal.
+    /// herdr itself names the space from its directory; renaming is the only
+    /// way the label changes.
     func createNewSpace(on device: Device) {
         Task {
             do {
                 let service = service(for: device)
                 let created = try await service.createWorkspace(label: nil, cwd: nil)
-                autoNamedWorkspaces.insert("\(device.id.uuidString):\(created.workspaceID)")
                 let paneID: String
                 if let rootPaneID = created.rootPaneID {
                     paneID = rootPaneID

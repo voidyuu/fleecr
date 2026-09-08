@@ -220,6 +220,26 @@ public struct TabInfo: Codable, Sendable, Identifiable, Equatable {
         return trimmed
     }
 
+    /// The name a rename sheet should edit: herdr's stored label minus the
+    /// display index and agent kind herdr composes into tabs nobody renamed
+    /// ("2 · pi › π - herdrm" → "π - herdrm", "4 · eeg" → "eeg"). nil when
+    /// herdr has no stored name for this tab. Renaming writes the result back
+    /// as the whole label (`tab.rename`), exactly like the herdr TUI does.
+    public func renameSeed(agentKind: String?) -> String? {
+        var seed = customLabel ?? ""
+        // herdr 0.9 composes "{index} · …" until a rename stores a real label.
+        if let separator = seed.range(of: " \u{00B7} "),
+           !seed[..<separator.lowerBound].isEmpty,
+           seed[..<separator.lowerBound].allSatisfy(\ .isNumber) {
+            seed = String(seed[separator.upperBound...])
+            if let agentKind {
+                let kindPrefix = "\(agentKind) › "
+                if seed.hasPrefix(kindPrefix) { seed = String(seed.dropFirst(kindPrefix.count)) }
+            }
+        }
+        return seed.isEmpty ? nil : seed
+    }
+
     enum CodingKeys: String, CodingKey {
         case tabID = "tab_id"
         case workspaceID = "workspace_id"

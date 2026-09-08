@@ -178,6 +178,55 @@ final class AgentTitleTests: XCTestCase {
         XCTAssertEqual(renamed.customLabel, "制度图谱讨论")
     }
 
+    func testRenameSeedStripsComposedIndexAndAgentKind() {
+        // herdr 0.9 composes "2 · pi › π - herdrm" for tabs nobody renamed;
+        // the name a rename edits is just the trailing title.
+        let tab = TabInfo(
+            tabID: "w2S:tX", workspaceID: "w2S", number: 29, label: "2 · pi › π - herdrm",
+            focused: true, paneCount: 1, agentStatusRaw: "idle"
+        )
+        XCTAssertEqual(tab.renameSeed(agentKind: "pi"), "π - herdrm")
+    }
+
+    func testRenameSeedStripsComposedIndexForBareTerminal() {
+        let tab = TabInfo(
+            tabID: "w3M:t2", workspaceID: "w3M", number: 2, label: "2 · eeg",
+            focused: false, paneCount: 1, agentStatusRaw: nil
+        )
+        XCTAssertEqual(tab.renameSeed(agentKind: nil), "eeg")
+    }
+
+    func testRenameSeedKeepsStoredCustomLabel() {
+        let tab = TabInfo(
+            tabID: "w1:t2", workspaceID: "w1", number: 8, label: "制度图谱讨论",
+            focused: false, paneCount: 1, agentStatusRaw: nil
+        )
+        XCTAssertEqual(tab.renameSeed(agentKind: "codex"), "制度图谱讨论")
+    }
+
+    func testRenameSeedIsNilForFreshTabs() {
+        let bare = TabInfo(
+            tabID: "w3R:t1", workspaceID: "w3R", number: 1, label: "1",
+            focused: true, paneCount: 1, agentStatusRaw: nil
+        )
+        XCTAssertNil(bare.renameSeed(agentKind: "pi"))
+        let empty = TabInfo(
+            tabID: "w3R:t2", workspaceID: "w3R", number: 2, label: "  ",
+            focused: false, paneCount: 1, agentStatusRaw: nil
+        )
+        XCTAssertNil(empty.renameSeed(agentKind: nil))
+    }
+
+    func testRenameSeedKeepsNonIndexPrefixUntouched() {
+        // "api · v2" is a label someone set; its " · " prefix is not a
+        // composed tab index, so nothing is stripped.
+        let tab = TabInfo(
+            tabID: "w1:t3", workspaceID: "w1", number: 3, label: "api · v2",
+            focused: false, paneCount: 1, agentStatusRaw: nil
+        )
+        XCTAssertEqual(tab.renameSeed(agentKind: nil), "api · v2")
+    }
+
     private func decode(_ json: String) throws -> AgentInfo {
         try JSONDecoder().decode(AgentInfo.self, from: Data(json.utf8))
     }

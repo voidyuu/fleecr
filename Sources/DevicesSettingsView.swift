@@ -23,6 +23,7 @@ struct DevicesSettingsView: View {
                     ScrollView {
                         deviceListContent
                     }
+                    .scrollContentBackground(.hidden)
                     .frame(height: 240)
                 } else {
                     deviceListContent
@@ -35,6 +36,7 @@ struct DevicesSettingsView: View {
                 bottomToolbar
             }
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(Theme.sidebarBorder, lineWidth: 1)

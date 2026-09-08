@@ -389,10 +389,28 @@ final class LineBreakTerminalView: AppTerminalView {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if modifiers == .command && event.charactersIgnoringModifiers == "v" {
+        guard modifiers.contains(.command) else {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        let chars = event.charactersIgnoringModifiers ?? ""
+
+        // App-level menu chords must never be swallowed by the embedded terminal's
+        // own keybindings (Ghostty defaults bind e.g. ⌘Q/⌘W itself), or the app's
+        // menu commands (Quit, Close, …) never fire while a terminal has focus.
+        // Yield them by returning false so AppKit routes them to the app menu.
+        switch chars {
+        case "q", "w", "h", "m":
+            return false
+        default:
+            break
+        }
+
+        if modifiers == .command && chars == "v" {
             paste(nil)
             return true
         }
+
         return super.performKeyEquivalent(with: event)
     }
 

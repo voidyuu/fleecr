@@ -128,6 +128,7 @@ struct SidebarView: View {
                             ForEach(model.visibleTerminals) { entry in
                                 terminalRow(entry)
                                     .contextMenu {
+                                        Button("Rename Terminal…") { model.terminalToRename = entry }
                                         Button("Close Terminal…", role: .destructive) {
                                             model.requestClosePane(entry.ref, name: entry.title)
                                         }

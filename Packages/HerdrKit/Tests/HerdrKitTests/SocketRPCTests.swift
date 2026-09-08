@@ -45,4 +45,36 @@ final class SocketRPCTests: XCTestCase {
         )
         XCTAssertEqual(noSigPipe, 1)
     }
+
+    func testReadLineClearsReceiveTimeoutWhenTimeoutIsNil() throws {
+        var fds: [Int32] = [0, 0]
+        XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds), 0)
+        let reader = fds[0]
+        let writer = fds[1]
+        defer {
+            close(reader)
+            close(writer)
+        }
+
+        let ack = "ack\n"
+        _ = ack.withCString { Darwin.write(writer, $0, ack.utf8.count) }
+        var buffer = Data()
+        let firstLine = try SocketRPC.readLine(fd: reader, timeoutSeconds: 15, buffer: &buffer)
+        XCTAssertEqual(firstLine, Data("ack".utf8))
+
+        var tv = timeval()
+        var len = socklen_t(MemoryLayout<timeval>.size)
+        XCTAssertEqual(getsockopt(reader, SOL_SOCKET, SO_RCVTIMEO, &tv, &len), 0)
+        XCTAssertEqual(tv.tv_sec, 15)
+
+        let event = "event\n"
+        _ = event.withCString { Darwin.write(writer, $0, event.utf8.count) }
+
+        let secondLine = try SocketRPC.readLine(fd: reader, timeoutSeconds: nil, buffer: &buffer)
+        XCTAssertEqual(secondLine, Data("event".utf8))
+
+        XCTAssertEqual(getsockopt(reader, SOL_SOCKET, SO_RCVTIMEO, &tv, &len), 0)
+        XCTAssertEqual(tv.tv_sec, 0)
+        XCTAssertEqual(tv.tv_usec, 0)
+    }
 }
