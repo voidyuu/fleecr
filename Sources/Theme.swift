@@ -45,6 +45,17 @@ enum Theme {
     static let sidebarBorder = dynamic(hex(0xD9D9D9), hex(0x292929))
     static let hairline = dynamic(hex(0x000000, alpha: 0.08), hex(0xFFFFFF, alpha: 0.06))
 
+    /// Frosted sidebar surface tinted with the active theme's background, so the
+    /// chrome carries the same palette as the terminal instead of a fixed color.
+    @ViewBuilder
+    static func sidebarBackground(theme: AppTheme) -> some View {
+        ZStack {
+            VisualEffectView(material: .sidebar)
+            Color(hex: theme.background).opacity(theme.isDark ? 0.55 : 0.45)
+        }
+    }
+
+
     /// Distinct tints for device chips (deliberately avoids the status colors).
     static let devicePalette: [Color] = [
         dynamic(hex(0x7C3AED), hex(0x8B5CF6)),  // violet

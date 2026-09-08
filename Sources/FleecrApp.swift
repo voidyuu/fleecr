@@ -65,7 +65,6 @@ extension FocusedValues {
 @main
 struct FleecrApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @AppStorage("app.theme") private var themePreference = "system"
     @FocusedValue(\.appModel) private var focusedModel
 
     init() {
@@ -75,6 +74,10 @@ struct FleecrApp: App {
         AppLanguage.synchronize()
         SSHCredentialStore.purgeAuthorizations()
         TerminalDefaults.registerBundledFonts()
+        // Force the store early so the persisted theme's appearance lands before
+        // the first window draws.
+        let _ = ThemeStore.shared
+        ThemeStore.shared.restoreAppearance()
     }
 
     private var activeModel: AppModel {
@@ -84,10 +87,6 @@ struct FleecrApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(model: appDelegate.model)
-                .onAppear { Self.applyTheme(themePreference) }
-                .onChange(of: themePreference) { _, newValue in
-                    Self.applyTheme(newValue)
-                }
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified(showsTitle: false))
@@ -120,14 +119,6 @@ struct FleecrApp: App {
 
         Settings {
             SettingsView(model: appDelegate.model)
-        }
-    }
-
-    static func applyTheme(_ preference: String) {
-        switch preference {
-        case "light": NSApp.appearance = NSAppearance(named: .aqua)
-        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
-        default: NSApp.appearance = nil
         }
     }
 
@@ -270,20 +261,37 @@ struct TerminalSettingsView: View {
 }
 
 struct AppearanceSettingsView: View {
-    @AppStorage("app.theme") private var themePreference = "system"
+    @ObservedObject private var store = ThemeStore.shared
     @AppStorage(AppLanguage.defaultsKey) private var language = AppLanguage.system.rawValue
 
     var body: some View {
         Form {
-            Picker("Theme", selection: $themePreference) {
-                Text(String(localized: "theme.system", defaultValue: "System")).tag("system")
-                Text(String(localized: "theme.light", defaultValue: "Light")).tag("light")
-                Text(String(localized: "theme.dark", defaultValue: "Dark")).tag("dark")
+            Picker("Appearance", selection: appearanceSelection) {
+                ForEach(AppearanceMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
             }
             .pickerStyle(.segmented)
-            Text("The terminal follows the app theme.")
+            Text("System follows the system setting. The selected mode colors the sidebar and chrome.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+
+            Picker("Dark Mode Theme", selection: darkThemeSelection) {
+                ForEach(AppTheme.darkThemes) { theme in
+                    themeLabel(theme).tag(theme)
+                }
+            }
+
+            Picker("Light Mode Theme", selection: lightThemeSelection) {
+                ForEach(AppTheme.lightThemes) { theme in
+                    themeLabel(theme).tag(theme)
+                }
+            }
+            Text("Each mode keeps its own terminal theme, so the palette always matches the app.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+
+            themePreview
 
             Picker("Language", selection: $language) {
                 ForEach(AppLanguage.allCases) { option in
@@ -300,7 +308,72 @@ struct AppearanceSettingsView: View {
         }
         .padding(20)
     }
+
+    private var appearanceSelection: Binding<AppearanceMode> {
+        Binding(
+            get: { store.appearance },
+            set: { store.setAppearance($0) }
+        )
+    }
+
+    private var darkThemeSelection: Binding<AppTheme> {
+        Binding(
+            get: { store.darkTheme },
+            set: { store.setTheme($0, forDark: true) }
+        )
+    }
+
+    private var lightThemeSelection: Binding<AppTheme> {
+        Binding(
+            get: { store.lightTheme },
+            set: { store.setTheme($0, forDark: false) }
+        )
+    }
+
+    private func themeLabel(_ theme: AppTheme) -> some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color(hex: theme.background))
+                .frame(width: 26, height: 16)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3)
+                        .strokeBorder(Theme.sidebarBorder, lineWidth: 1)
+                )
+            Text(theme.displayName)
+        }
+    }
+
+    /// A small live preview of the active terminal palette.
+    private var themePreview: some View {
+        let theme = store.activeTheme
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Preview")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("❯ herdr agent attach w1:p1 — herdr ABC 0123")
+                    .font(Font(TerminalDefaults.font(name: "", size: 12.5)))
+                    .lineLimit(1)
+
+                HStack(spacing: 6) {
+                    ForEach(Array(theme.ansi.prefix(8)), id: \.self) { hex in
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color(hex: hex))
+                            .frame(width: 18, height: 12)
+                    }
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(hex: theme.background), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color(hex: theme.foreground), lineWidth: 1)
+            )
+        }
+    }
 }
+
 
 struct NotificationSettingsView: View {
     @AppStorage("notifications.enabled") private var enabled = true

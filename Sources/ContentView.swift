@@ -106,9 +106,8 @@ struct DetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             titlebar
-                .background(Theme.contentBackground)
+                .background(Color(hex: themeStore.activeTheme.background))
                 .zIndex(1)
-            Rectangle().fill(Theme.hairline).frame(height: 1)
             detailContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -228,7 +227,7 @@ struct DetailView: View {
     @AppStorage(TerminalDefaults.fontWeightKey) private var terminalFontWeight = TerminalDefaults.defaultFontWeight
     @AppStorage(TerminalDefaults.lineSpacingKey) private var terminalLineSpacing = TerminalDefaults.defaultLineSpacing
     @AppStorage(TerminalDefaults.mouseReportingKey) private var terminalMouseReporting = TerminalDefaults.defaultMouseReporting
-    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject private var themeStore = ThemeStore.shared
     /// The entry whose attach process exited, and how. Keyed by entry id so a stale
     /// exit from a previously selected pane never covers a live terminal.
     @State private var endedAttachKey: String?
@@ -262,7 +261,7 @@ struct DetailView: View {
                     thinStrokes: terminalThinStrokes,
                     fontWeight: terminalFontWeight,
                     lineSpacing: terminalLineSpacing,
-                    dark: colorScheme == .dark,
+                    theme: themeStore.activeTheme,
                     mouseReporting: terminalMouseReporting,
                     onAttachmentError: { model.actionError = $0 },
                     onAttachmentUploadingChanged: { uploadingAttachment = $0 },
@@ -271,7 +270,7 @@ struct DetailView: View {
                         endedAttachCode = code
                     }
                 )
-                .id("attach-\(entry.id)-\(colorScheme)-\(attachRetry)")
+                .id("attach-\(entry.id)-\(attachRetry)")
                 if endedAttachKey == entry.id {
                     attachEndedOverlay(entry)
                 }

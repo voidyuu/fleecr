@@ -750,7 +750,7 @@ struct AttachTerminalView: NSViewRepresentable {
     var thinStrokes: Bool = true
     var fontWeight: Double = TerminalDefaults.defaultFontWeight
     var lineSpacing: Double = TerminalDefaults.defaultLineSpacing
-    var dark: Bool = false
+    var theme: AppTheme = .terminalDark
     var mouseReporting: Bool = TerminalDefaults.defaultMouseReporting
     var onAttachmentError: (String) -> Void = { _ in }
     var onAttachmentUploadingChanged: (Bool) -> Void = { _ in }
@@ -818,7 +818,7 @@ struct AttachTerminalView: NSViewRepresentable {
             thinStrokes: thinStrokes,
             fontWeight: fontWeight,
             lineSpacing: lineSpacing,
-            dark: dark,
+            theme: theme,
             mouseReporting: mouseReporting
         )
     }
@@ -859,14 +859,21 @@ struct AttachTerminalView: NSViewRepresentable {
 func applyTerminalAppearance(
     _ view: LocalProcessTerminalView,
     fontName: String, fontSize: Double, thinStrokes: Bool,
-    fontWeight: Double, lineSpacing: Double, dark: Bool, mouseReporting: Bool
+    fontWeight: Double, lineSpacing: Double, theme: AppTheme, mouseReporting: Bool
 ) {
+    let dark = theme.isDark
     view.mouseReporting = mouseReporting
     view.appliedDarkAppearance = dark
     view.usesLightColors = !dark
     if !dark {
         view.resetLightColorAdapter()
     }
+
+    // The controller's theme defaults to TerminalTheme.default (Afterglow /
+    // Alabaster), and the renderer appends theme lines AFTER our configuration,
+    // letting it override all colors. Neutralize it so our explicit palette below
+    // is authoritative — without this, every AppTheme renders as Afterglow/Alabaster.
+    view.terminalController.setTheme(.init())
 
     let config = TerminalConfiguration { builder in
         if !fontName.isEmpty {
@@ -876,18 +883,12 @@ func applyTerminalAppearance(
         builder.withFontThicken(!thinStrokes)
         builder.withWindowPaddingX(TerminalDefaults.defaultPaddingX)
         builder.withWindowPaddingY(TerminalDefaults.defaultPaddingY)
-        if dark {
-            builder.withBackground(TerminalDefaults.darkHexBackground)
-            builder.withForeground(TerminalDefaults.darkHexForeground)
-            for (idx, color) in TerminalDefaults.darkHexPalette.enumerated() {
-                builder.withPalette(idx, color: color)
-            }
-        } else {
-            builder.withBackground(TerminalDefaults.lightHexBackground)
-            builder.withForeground(TerminalDefaults.lightHexForeground)
-            for (idx, color) in TerminalDefaults.lightHexPalette.enumerated() {
-                builder.withPalette(idx, color: color)
-            }
+        builder.withBackground(theme.background)
+        builder.withForeground(theme.foreground)
+        builder.withSelectionBackground(theme.selection)
+        builder.withCursorColor(theme.cursor)
+        for (idx, color) in theme.ansi.enumerated() {
+            builder.withPalette(idx, color: color)
         }
         if abs(lineSpacing - 1.0) > 0.01 {
             builder.withCustom("adjust-cell-height", "\(Int((lineSpacing - 1.0) * 100))%")

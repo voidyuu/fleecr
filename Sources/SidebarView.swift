@@ -21,6 +21,7 @@ struct VisualEffectView: NSViewRepresentable {
 struct SidebarView: View {
     @ObservedObject var model: AppModel
     @Binding var collapsed: Bool
+    @ObservedObject private var themeStore = ThemeStore.shared
     @State private var draggingSpaceID: String?
     @State private var spaceDrop: (id: String, after: Bool)?
     @State private var draggingAgentID: String?
@@ -144,7 +145,7 @@ struct SidebarView: View {
             footer
         }
         .frame(width: 260)
-        .background(VisualEffectView(material: .sidebar).ignoresSafeArea())
+        .background(Theme.sidebarBackground(theme: themeStore.activeTheme).ignoresSafeArea())
     }
 
     private var emptyAgentsHint: String {
@@ -243,9 +244,6 @@ struct SidebarView: View {
                         .foregroundStyle(Theme.textTertiary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    if model.showsRowDeviceBadges {
-                        deviceBadge(entry.device)
-                    }
                 }
             }
             .padding(.horizontal, 8)
@@ -254,10 +252,6 @@ struct SidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(SidebarRowButtonStyle(selected: selected))
-    }
-
-    private func deviceBadge(_ device: Device) -> some View {
-        DeviceChip(device: device)
     }
 
     private struct AgentRowView: View {
@@ -297,9 +291,6 @@ struct SidebarView: View {
                     Text("needs input")
                         .font(.system(size: 11.5))
                         .foregroundStyle(Theme.warning)
-                }
-                if model.showsRowDeviceBadges {
-                    DeviceChip(device: entry.device)
                 }
             }
         }
