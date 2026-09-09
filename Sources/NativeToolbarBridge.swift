@@ -112,7 +112,15 @@ struct NativeToolbarBridge: NSViewRepresentable {
 
         func syncSearchState() {
             guard let field = searchItem?.searchField else { return }
-            if field.stringValue != parent.query { field.stringValue = parent.query }
+            // Never clobber the field while it's the active editor. Programmatically
+            // setting stringValue over an in-progress IME composition (Chinese/Japanese
+            // pinyin) destroys the marked text, so typing with an input method fails.
+            // During editing the field is the source of truth; only push an external
+            // value in (e.g. clearing on blur) when it isn't being edited.
+            let isEditing = field.currentEditor() != nil && field.window?.firstResponder === field.currentEditor()
+            if !isEditing, field.stringValue != parent.query {
+                field.stringValue = parent.query
+            }
             if parent.isSearchPresented, field.window?.firstResponder !== field.currentEditor() {
                 searchItem?.beginSearchInteraction()
             }
