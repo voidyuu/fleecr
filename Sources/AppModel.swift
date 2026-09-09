@@ -56,6 +56,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var unreadAgents: Set<AgentUnreadKey> = []
 
     @Published var showAddDevice = false
+    /// Request to activate the toolbar search bar (⌘K); DetailView focuses the
+    /// field and resets this back to false.
     @Published var showSearch = false
     @Published var deviceToEdit: Device?
     @Published var sshAuthenticationRequest: SSHAuthenticationRequest?
@@ -467,7 +469,7 @@ final class AppModel: ObservableObject {
         return agents.first
     }
 
-    /// Jump target used by the search sheet and by notification clicks.
+    /// Jump target used by the toolbar search dropdown and by notification clicks.
     func reveal(_ ref: PaneRef) {
         let state = session(ref.deviceID)
         if let workspaceID = state.agents.first(where: { $0.paneID == ref.paneID })?.workspaceID

@@ -3318,13 +3318,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open command palette and workspace search"
+            "value": "Focus the toolbar search bar"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "打开命令面板与全局搜索"
+            "value": "聚焦工具栏搜索栏"
           }
         }
       }

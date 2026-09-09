@@ -8,6 +8,12 @@ the Sparkle update description — a release without a section here fails CI.
 ## [Unreleased]
 
 ### Changed
+- The ⌘K search panel is now a native-style search bar that lives in the
+  toolbar: results appear in a dropdown below the bar while typing, ranked the
+  same way as before (needs input, unread, working, then the rest). ⌘K toggles
+  the bar, ↑↓ navigate, ↩ opens, Esc or clicking the terminal dismisses, and
+  the separate magnifying-glass toolbar button is gone since the bar is always
+  visible.
 - Naming now belongs to the backend: space and tab names shown in the sidebar
   are exactly the labels herdr reports, and every rename writes through
   herdr's own `workspace.rename` / `tab.rename` RPCs — the same ones the herdr

@@ -255,7 +255,7 @@ extension ShortcutItem {
             category: .general,
             icon: "magnifyingglass",
             defaultShortcut: KeyCombination(keyCode: UInt16(kVK_ANSI_K), modifiers: [.command], keyDisplay: "K"),
-            description: String(localized: "shortcut.desc.quickSearch", defaultValue: "Open command palette and workspace search")
+            description: String(localized: "shortcut.desc.quickSearch", defaultValue: "Focus the toolbar search bar")
         ),
         ShortcutItem(
             id: "toggleSidebar",

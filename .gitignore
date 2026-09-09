@@ -12,3 +12,6 @@ Sources/Info.plist
 
 # cua-driver screenshots
 .cua/
+
+# test coverage raw profiles
+*.profraw

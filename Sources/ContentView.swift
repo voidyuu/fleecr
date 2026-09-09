@@ -35,7 +35,7 @@ struct RootView: View {
                     .fill(Theme.sidebarBorder)
                     .frame(width: sidebarCollapsed ? 0 : 1)
                     .ignoresSafeArea()
-                DetailView(model: model)
+                DetailView(model: model, sidebarCollapsed: $sidebarCollapsed)
             }
             .animation(.easeInOut(duration: 0.2), value: sidebarCollapsed)
             .ignoresSafeArea(edges: .top)
@@ -67,13 +67,11 @@ struct RootView: View {
             sidebarCollapsed.toggle()
         }
         .focusedSceneValue(\.appModel, model)
-        .sheet(isPresented: $model.showSearch) { SearchSheet(model: model) }
         .background(WindowAccessor { window in
             window?.titlebarAppearsTransparent = true
             window?.styleMask.insert(.fullSizeContentView)
         })
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .toolbar { toolbarContent }
         .frame(minWidth: 980, minHeight: 620)
         .onAppear {
             model.start()
@@ -115,61 +113,34 @@ struct RootView: View {
         }
     }
 
-    /// Extracted so the giant `body` chain stays type-checkable.
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
-            Button {
-                sidebarCollapsed.toggle()
-            } label: {
-                Image(systemName: "sidebar.left")
-            }
-            .help("Toggle sidebar (⌘B)")
-            .accessibilityLabel("Toggle sidebar")
-        }
-        ToolbarItem(placement: .navigation) {
-            Button {
-                if let space = model.currentSpace, let device = model.device(space.deviceID) {
-                    model.createNewSpace(on: device)
-                }
-            } label: {
-                Image(systemName: "folder.badge.plus")
-            }
-            .help("New Space")
-            .accessibilityLabel("New Space")
-        }
-        if #available(macOS 26.0, *) {
-            ToolbarSpacer(.flexible, placement: .primaryAction)
-        }
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                model.startNewTerminal()
-            } label: {
-                Image(systemName: "plus")
-            }
-            .help("New Terminal (⌘T)")
-            .accessibilityLabel("New Terminal")
-        }
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                model.showSearch = true
-            } label: {
-                Image(systemName: "magnifyingglass")
-            }
-            .help("Search (⌘K)")
-            .accessibilityLabel("Search")
-        }
-    }
 }
+
 
 /// Height of the band the native unified toolbar (52pt) occupies: the detail region reserves
 /// it so the terminal never renders under the traffic lights — all toolbar content is native.
 enum TitlebarMetrics {
     static let height: CGFloat = 54
+    /// Keeps the custom result menu aligned with the native trailing toolbar search
+    /// field, immediately to the left of the New Terminal (+) action.
+    static let searchTrailingInset: CGFloat = 45
 }
 
 struct DetailView: View {
     @ObservedObject var model: AppModel
+    @Binding var sidebarCollapsed: Bool
+
+    // Inline toolbar search (⌘K): the bar lives in the titlebar band and the
+    // results dropdown overlays the content below it. Both are centered in the
+    // same container, so the dropdown needs only a vertical offset to hug the
+    // bar: band is 54 tall, field is 26 centered (bottom at 40), +5 gap.
+    private static let dropdownOffsetY: CGFloat = 45
+    @State private var searchQuery = ""
+    @State private var searchHighlighted = 0
+    @State private var searchFieldFocused = false
+
+    private var searchResults: [SearchIndex.Result] {
+        SearchIndex.results(model: model, query: searchQuery)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -178,6 +149,76 @@ struct DetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.contentBackground.ignoresSafeArea())
+        .overlay(alignment: .topTrailing) {
+            searchDropdown
+        }
+        // AppKit owns the complete toolbar so + and its native search item are
+        // consecutive NSToolbar items, rather than separate SwiftUI placement zones.
+        .background(
+            NativeToolbarBridge(
+                model: model,
+                sidebarCollapsed: $sidebarCollapsed,
+                query: $searchQuery,
+                isSearchPresented: $searchFieldFocused,
+                highlighted: $searchHighlighted,
+                resultCount: searchResults.count,
+                onChoose: chooseHighlightedSearchResult
+            )
+        )
+        // ⌘K (hidden button + global shortcut) asks the model to open search;
+        // focus toggling lives here next to the field state it drives.
+        .onChange(of: model.showSearch) { _, requested in
+            guard requested else { return }
+            model.showSearch = false
+            searchFieldFocused.toggle()
+        }
+        .onChange(of: searchQuery) { _, _ in searchHighlighted = 0 }
+        // Losing focus (Esc, ⌘K again, clicking the terminal) closes the dropdown
+        // and resets the bar to its placeholder, like a fresh Spotlight open.
+        .onChange(of: searchFieldFocused) { _, focused in
+            dbg("focused \(focused)")
+            if !focused {
+                searchQuery = ""
+                searchHighlighted = 0
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var searchDropdown: some View {
+        // Hidden while focused with nothing to show: an empty query with no
+        // devices yet. A query with no matches still shows "No matches".
+        if searchFieldFocused, !searchResults.isEmpty || !searchQuery.isEmpty {
+            // fixedSize() stops the overlay from stretching this to fill the
+            // window; the Color.clear spacer provides the vertical offset so the
+            // dropdown hugs the top-right search bar, and the trailing inset keeps
+            // it horizontally aligned with the field wherever it sits.
+            VStack(spacing: 0) {
+                Color.clear.frame(height: Self.dropdownOffsetY)
+                SearchResultsDropdown(
+                    model: model,
+                    highlighted: $searchHighlighted,
+                    results: searchResults,
+                    onChoose: chooseSearchResult
+                )
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: SearchResultsDropdown.self.width)
+            .padding(.trailing, TitlebarMetrics.searchTrailingInset)
+        }
+    }
+
+    private func chooseSearchResult(_ result: SearchIndex.Result) {
+        dbg("choose \(result.id)")
+        switch result {
+        case .agent(let entry):
+            model.reveal(entry.ref)
+        case .terminal(let entry):
+            model.reveal(entry.ref)
+        case .space(let entry):
+            model.selectSpace(entry.ref)
+        }
+        searchFieldFocused = false
     }
 
     private var detailContent: some View {
@@ -186,12 +227,27 @@ struct DetailView: View {
 
     // MARK: - Toolbar band
 
-    /// Empty band behind the native unified toolbar: reserves its height so the terminal
-    /// stays below the traffic lights, and carries the theme background flush to the top
-    /// edge. The toolbar's own items (sidebar toggle left, New Terminal right) are native.
+    /// Reserves the unified toolbar band so the terminal never draws under the
+    /// traffic lights. Search itself is a native `.searchable` toolbar item, which
+    /// macOS places immediately to the left of the New Terminal (+) action.
     private var titlebar: some View {
         Color(hex: themeStore.activeTheme.background)
             .frame(height: TitlebarMetrics.height)
+    }
+
+    /// TEMPORARY debug tap for search interaction diagnostics; removed before ship.
+    private func dbg(_ msg: String) {
+        let line = "[\(Date())] \(msg)\n"
+        if let h = FileHandle(forWritingAtPath: "/tmp/fleecr-search-debug.log") {
+            _ = try? h.seekToEnd()
+            try? h.write(contentsOf: line.data(using: .utf8)!)
+            try? h.close()
+        }
+    }
+
+    private func chooseHighlightedSearchResult() {
+        guard searchResults.indices.contains(searchHighlighted) else { return }
+        chooseSearchResult(searchResults[searchHighlighted])
     }
 
     // MARK: - Terminal

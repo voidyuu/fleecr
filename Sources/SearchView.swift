@@ -1,14 +1,11 @@
 import HerdrKit
 import SwiftUI
 
-/// Command-palette style search over agents, terminals, and spaces across all devices (⌘K).
-struct SearchSheet: View {
-    @ObservedObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-    @State private var highlighted = 0
-    @FocusState private var fieldFocused: Bool
-
+/// Search index shared by the toolbar search bar (⌘K): a native-style long field in
+/// the titlebar band whose results appear in a dropdown anchored below it. Ranking
+/// mirrors the old command palette: needs input, unread, working, then the rest.
+@MainActor
+enum SearchIndex {
     enum Result: Identifiable {
         case agent(AppModel.AgentEntry)
         case terminal(AppModel.TerminalEntry)
@@ -23,7 +20,9 @@ struct SearchSheet: View {
         }
     }
 
-    private var results: [Result] {
+    /// All agents, terminals, and spaces across devices, filtered by `query`
+    /// (title, agent kind, tab label, cwd, device, space) and ranked by urgency.
+    static func results(model: AppModel, query: String) -> [Result] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         let agents = model.devices.flatMap { device in
             model.session(device.id).agents.map { model.agentEntry(device: device, agent: $0) }
@@ -56,18 +55,18 @@ struct SearchSheet: View {
                 || model.spaceName(deviceID: entry.device.id, workspaceID: entry.pane.workspaceID)
                     .lowercased().contains(q)
         }
-        // Sidebar follows herdr tab order so drag-reorder sticks. ⌘K still
+        // Sidebar follows herdr tab order so drag-reorder sticks. Search still
         // ranks by urgency: needs input, unread, working, then the rest.
         let ranked = agents.sorted {
-            let r0 = searchRank($0)
-            let r1 = searchRank($1)
+            let r0 = rank($0, model: model)
+            let r1 = rank($1, model: model)
             if r0 != r1 { return r0 < r1 }
             return ($0.agent.revision ?? 0) > ($1.agent.revision ?? 0)
         }
         return ranked.map(Result.agent) + terminals.map(Result.terminal) + spaces.map(Result.space)
     }
 
-    private func searchRank(_ entry: AppModel.AgentEntry) -> Int {
+    private static func rank(_ entry: AppModel.AgentEntry, model: AppModel) -> Int {
         switch entry.agent.status {
         case .blocked: return 0
         case .done where model.isUnread(entry): return 1
@@ -77,101 +76,84 @@ struct SearchSheet: View {
         case .unknown: return 5
         }
     }
+}
+
+/// Results shown in a dropdown that hangs below the toolbar search bar. Frosted
+/// material, hairline border, and a soft shadow so it reads as a floating menu
+/// over the terminal instead of pushing content around.
+struct SearchResultsDropdown: View {
+    @ObservedObject var model: AppModel
+    @Binding var highlighted: Int
+    let results: [SearchIndex.Result]
+    var onChoose: (SearchIndex.Result) -> Void
+
+    /// Matches the toolbar search bar's fixed width so the dropdown reads as
+    /// part of the field.
+    static let width: CGFloat = 440
+
+    /// Rows are 36pt with 1pt spacing and 6pt list padding; the dropdown hugs its
+    /// content and only scrolls past this cap.
+    private var listHeight: CGFloat {
+        min(CGFloat(results.count) * 36 + CGFloat(max(results.count - 1, 0)) + 12, 320)
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.textTertiary)
-                TextField("Search agents, terminals, and spaces…", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .focused($fieldFocused)
-                    .onSubmit { chooseHighlighted() }
-                    .onKeyPress(.downArrow) {
-                        highlighted = min(highlighted + 1, max(results.count - 1, 0))
-                        return .handled
-                    }
-                    .onKeyPress(.upArrow) {
-                        highlighted = max(highlighted - 1, 0)
-                        return .handled
-                    }
-                    .onKeyPress(.escape) {
-                        dismiss()
-                        return .handled
-                    }
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
-
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-
+        Group {
             if results.isEmpty {
                 Text("No matches")
                     .font(.system(size: 12.5))
                     .foregroundStyle(Theme.textTertiary)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
+                    .padding(.vertical, 22)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 1) {
                             ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
-                                row(result, isHighlighted: index == highlighted)
-                                    .onTapGesture { choose(result) }
+                                SearchResultRow(model: model, result: result, isHighlighted: index == highlighted)
+                                    .onTapGesture { onChoose(result) }
                                     .onHover { if $0 { highlighted = index } }
                             }
                         }
-                        .padding(8)
+                        .padding(6)
                     }
-                    .frame(maxHeight: 320)
+                    .frame(height: listHeight)
                     // anchor: nil moves the minimum to reveal the row — a no-op when it
                     // is already visible, so hovering never yanks the scroll position.
                     .onChange(of: highlighted) { _, index in
                         guard results.indices.contains(index) else { return }
                         proxy.scrollTo(results[index].id, anchor: nil)
                     }
-                    // Reopening ⌘K starts at the top even if the sheet was left
-                    // scrolled to the bottom.
                     .onAppear {
                         if let first = results.first { proxy.scrollTo(first.id, anchor: .top) }
                     }
                 }
             }
-
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-
-            HStack(spacing: 12) {
-                hint("↑↓", "navigate")
-                hint("↩", "open")
-                Spacer()
-                hint("esc", "cancel")
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 28)
         }
-        .frame(width: 440)
-        .onAppear { fieldFocused = true }
-        .onChange(of: query) { _, _ in highlighted = 0 }
+        .frame(width: max(Self.width, 240))
+        // Clip the scrolling rows to the rounded container so content never
+        // bleeds past the top/bottom corners while the list slides.
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Theme.hairline, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.22), radius: 12, y: 4)
     }
+}
 
-    private func hint(_ key: String, _ label: LocalizedStringKey) -> some View {
-        HStack(spacing: 4) {
-            Text(key)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Theme.textTertiary)
-                .padding(.horizontal, 4)
-                .frame(height: 16)
-                .background(Theme.itemWash, in: RoundedRectangle(cornerRadius: 4))
-            Text(label)
-                .font(.system(size: 10.5))
-                .foregroundStyle(Theme.textGhost)
-        }
-    }
+/// One result row: agent / terminal / space icon, title, status glyph, and the
+/// trailing "kind · space · device" context, same content as the sidebar rows.
+struct SearchResultRow: View {
+    @ObservedObject var model: AppModel
+    let result: SearchIndex.Result
+    let isHighlighted: Bool
 
-    @ViewBuilder
-    private func row(_ result: Result, isHighlighted: Bool) -> some View {
+    var body: some View {
         HStack(spacing: 9) {
             switch result {
             case .agent(let entry):
@@ -247,22 +229,5 @@ struct SearchSheet: View {
                 DeviceChip(device: device)
             }
         }
-    }
-
-    private func chooseHighlighted() {
-        guard results.indices.contains(highlighted) else { return }
-        choose(results[highlighted])
-    }
-
-    private func choose(_ result: Result) {
-        switch result {
-        case .agent(let entry):
-            model.reveal(entry.ref)
-        case .terminal(let entry):
-            model.reveal(entry.ref)
-        case .space(let entry):
-            model.selectSpace(entry.ref)
-        }
-        dismiss()
     }
 }
