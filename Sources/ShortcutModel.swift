@@ -292,30 +292,6 @@ extension ShortcutItem {
 
         // Terminal
         ShortcutItem(
-            id: "clearTerminal",
-            name: String(localized: "shortcut.action.clearTerminal", defaultValue: "Clear Terminal"),
-            category: .terminal,
-            icon: "trash",
-            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_ANSI_K), modifiers: [.command, .option], keyDisplay: "K"),
-            description: String(localized: "shortcut.desc.clearTerminal", defaultValue: "Clear the terminal scrollback buffer")
-        ),
-        ShortcutItem(
-            id: "scrollToTop",
-            name: String(localized: "shortcut.action.scrollToTop", defaultValue: "Scroll to Top"),
-            category: .terminal,
-            icon: "arrow.up.to.line",
-            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_PageUp), modifiers: [.command, .option], keyDisplay: "⇞"),
-            description: String(localized: "shortcut.desc.scrollToTop", defaultValue: "Scroll terminal view to the top")
-        ),
-        ShortcutItem(
-            id: "scrollToBottom",
-            name: String(localized: "shortcut.action.scrollToBottom", defaultValue: "Scroll to Bottom"),
-            category: .terminal,
-            icon: "arrow.down.to.line",
-            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_PageDown), modifiers: [.command, .option], keyDisplay: "⇟"),
-            description: String(localized: "shortcut.desc.scrollToBottom", defaultValue: "Scroll terminal view to the bottom")
-        ),
-        ShortcutItem(
             id: "increaseFontSize",
             name: String(localized: "shortcut.action.increaseFontSize", defaultValue: "Increase Font Size"),
             category: .terminal,

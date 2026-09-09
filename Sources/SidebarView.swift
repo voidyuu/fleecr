@@ -21,6 +21,8 @@ struct VisualEffectView: NSViewRepresentable {
 struct SidebarView: View {
     @ObservedObject var model: AppModel
     @Binding var collapsed: Bool
+    // Shared toolbar search (⌘K): an active query hides non-matching rows in place.
+    @Binding var query: String
     @ObservedObject private var themeStore = ThemeStore.shared
     @State private var draggingSpaceID: String?
     @State private var spaceDrop: (id: String, after: Bool)?
@@ -36,44 +38,47 @@ struct SidebarView: View {
 
             ScrollView {
                 VStack(spacing: 1) {
-                    groupHeader("Spaces", expanded: $spacesExpanded)
-                    if spacesExpanded {
-                        ForEach(model.visibleSpaces) { entry in
-                            SpaceRowView(
-                                entry: entry,
-                                model: model,
-                                draggingSpaceID: $draggingSpaceID,
-                                spaceDrop: $spaceDrop
-                            )
+                    // While searching the sidebar drops the Spaces section entirely
+                    // and flattens all matching agents/terminals from every space.
+                    if !filtering {
+                        groupHeader("Spaces", expanded: $spacesExpanded)
+                        if spacesExpanded {
+                            ForEach(displaySpaces) { entry in
+                                SpaceRowView(
+                                    entry: entry,
+                                    model: model,
+                                    draggingSpaceID: $draggingSpaceID,
+                                    spaceDrop: $spaceDrop
+                                )
+                            }
+                        }
+
+                        Spacer().frame(height: 10)
+                    }
+
+                    // In sync with the Terminals group: when there are no matching
+                    // agents the whole section hides instead of showing an empty
+                    // header (and, while filtering, a "No matches" line).
+                    if !displayAgents.isEmpty {
+                        groupHeader("Agents", expanded: $agentsExpanded)
+                        if agentsExpanded {
+                            ForEach(displayAgents) { entry in
+                                AgentRowView(
+                                    entry: entry,
+                                    model: model,
+                                    hideSpace: filtering,
+                                    draggingAgentID: $draggingAgentID,
+                                    agentDrop: $agentDrop
+                                )
+                            }
                         }
                     }
 
-                    Spacer().frame(height: 10)
-
-                    groupHeader("Agents", expanded: $agentsExpanded)
-                    if agentsExpanded {
-                        if model.visibleAgents.isEmpty {
-                            Text(emptyAgentsHint)
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(Theme.textGhost)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(8)
-                        }
-                        ForEach(model.visibleAgents) { entry in
-                            AgentRowView(
-                                entry: entry,
-                                model: model,
-                                draggingAgentID: $draggingAgentID,
-                                agentDrop: $agentDrop
-                            )
-                        }
-                    }
-
-                    if !model.visibleTerminals.isEmpty {
+                    if !displayTerminals.isEmpty {
                         Spacer().frame(height: 10)
                         groupHeader("Terminals", expanded: $terminalsExpanded)
                         if terminalsExpanded {
-                            ForEach(model.visibleTerminals) { entry in
+                            ForEach(displayTerminals) { entry in
                                 terminalRow(entry)
                                     .contextMenu {
                                         Button("Rename Terminal…") { model.terminalToRename = entry }
@@ -96,12 +101,17 @@ struct SidebarView: View {
         .background(Theme.sidebarBackground(theme: themeStore.activeTheme).ignoresSafeArea())
     }
 
-    private var emptyAgentsHint: String {
-        switch model.connection {
-        case .connecting: return String(localized: "Connecting…")
-        case .failed(let reason): return reason
-        default: return String(localized: "No agents")
-        }
+    // Filtered rows: layout/group order is unchanged; an empty query (no filter)
+    // is the identity, a non-empty query keeps only what matches.
+    private var filtering: Bool { SidebarSearch.isActive(query) }
+    /// Spaces are only shown outside a search; while searching the sidebar flattens
+    /// to just Agents + Terminals (spaces are no longer a grouping concept).
+    private var displaySpaces: [AppModel.SpaceEntry] { model.visibleSpaces }
+    private var displayAgents: [AppModel.AgentEntry] {
+        SidebarSearch.matchingAgents(model: model, query: query)
+    }
+    private var displayTerminals: [AppModel.TerminalEntry] {
+        SidebarSearch.matchingTerminals(model: model, query: query)
     }
 
     // MARK: - Rows
@@ -197,6 +207,7 @@ struct SidebarView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
             .frame(height: 51)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(SidebarRowButtonStyle(selected: selected))
@@ -205,6 +216,7 @@ struct SidebarView: View {
     private struct AgentRowView: View {
     let entry: AppModel.AgentEntry
     @ObservedObject var model: AppModel
+    var hideSpace: Bool = false
     @Binding var draggingAgentID: String?
     @Binding var agentDrop: (id: String, after: Bool)?
     @State private var hovered = false
@@ -222,23 +234,35 @@ struct SidebarView: View {
                 Spacer(minLength: 0)
                 AgentStatusGlyph(status: agent.status, unreadDone: unread)
             }
-            HStack(spacing: 5) {
-                AgentKindBadge(kind: agent.agent)
-                Text("·")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Theme.textGhost)
-                Image(systemName: "folder")
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(Theme.textTertiary)
-                Text(model.spaceName(deviceID: entry.device.id, workspaceID: agent.workspaceID))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Theme.textTertiary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if agent.status == .blocked {
-                    Text("needs input")
+            if hideSpace {
+                HStack(spacing: 5) {
+                    AgentKindBadge(kind: agent.agent)
+                    Spacer(minLength: 0)
+                    if agent.status == .blocked {
+                        Text("needs input")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Theme.warning)
+                    }
+                }
+            } else {
+                HStack(spacing: 5) {
+                    AgentKindBadge(kind: agent.agent)
+                    Text("·")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.warning)
+                        .foregroundStyle(Theme.textGhost)
+                    Image(systemName: "folder")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Theme.textTertiary)
+                    Text(model.spaceName(deviceID: entry.device.id, workspaceID: agent.workspaceID))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if agent.status == .blocked {
+                        Text("needs input")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(Theme.warning)
+                    }
                 }
             }
         }

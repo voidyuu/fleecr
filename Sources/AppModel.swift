@@ -795,20 +795,9 @@ final class AppModel: ObservableObject {
                     selectedSpace = visibleSpaces.first?.ref
                 }
             }
-            if selectedPane == nil {
-                if let focusedPaneID = snapshot.focusedPaneID,
-                   paneIDs.contains(focusedPaneID) {
-                    let focused = PaneRef(deviceID: deviceID, paneID: focusedPaneID)
-                    let focusedWorkspaceID = snapshot.panes?.first(where: { $0.paneID == focusedPaneID })?.workspaceID
-                        ?? snapshot.agents.first(where: { $0.paneID == focusedPaneID })?.workspaceID
-                    if selectedSpace == nil || (selectedSpace?.deviceID == deviceID && selectedSpace?.workspaceID == focusedWorkspaceID) {
-                        selectedPane = focused
-                    }
-                }
-                if selectedPane == nil {
-                    selectedPane = preferredVisibleAgent()?.ref ?? firstVisiblePaneRef
-                }
-            }
+            // Selection is manual only: a periodic refresh must never pick or
+            // jump a pane for the user. The pane they clicked stays selected;
+            // if they have nothing selected it stays unselected until they click.
         } catch {
             sessions[deviceID]?.connection = .failed(error.localizedDescription)
         }

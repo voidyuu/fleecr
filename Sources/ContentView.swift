@@ -24,18 +24,20 @@ struct RootView: View {
     @ObservedObject var model: AppModel
     // Deliberately not persisted: the app always launches with the sidebar visible.
     @State private var sidebarCollapsed = false
+    // Shared by the sidebar's inline filter (⌘K) and the toolbar search field.
+    @State private var searchQuery = ""
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             HStack(spacing: 0) {
-                SidebarView(model: model, collapsed: $sidebarCollapsed)
+                SidebarView(model: model, collapsed: $sidebarCollapsed, query: $searchQuery)
                     .frame(width: sidebarCollapsed ? 0 : 260, alignment: .trailing)
                     .clipped()
                 Rectangle()
                     .fill(Theme.sidebarBorder)
                     .frame(width: sidebarCollapsed ? 0 : 1)
                     .ignoresSafeArea()
-                DetailView(model: model, sidebarCollapsed: $sidebarCollapsed)
+                DetailView(model: model, sidebarCollapsed: $sidebarCollapsed, query: $searchQuery)
             }
             .animation(.easeInOut(duration: 0.2), value: sidebarCollapsed)
             .ignoresSafeArea(edges: .top)
@@ -119,28 +121,18 @@ struct RootView: View {
 /// Height of the band the native unified toolbar (52pt) occupies: the detail region reserves
 /// it so the terminal never renders under the traffic lights — all toolbar content is native.
 enum TitlebarMetrics {
+    /// Height of the band the native unified toolbar (52pt) occupies: the detail region reserves
+    /// it so the terminal never renders under the traffic lights — all toolbar content is native.
     static let height: CGFloat = 54
-    /// Keeps the custom result menu aligned with the native trailing toolbar search
-    /// field, immediately to the left of the New Terminal (+) action.
-    static let searchTrailingInset: CGFloat = 45
 }
 
 struct DetailView: View {
     @ObservedObject var model: AppModel
     @Binding var sidebarCollapsed: Bool
-
-    // Inline toolbar search (⌘K): the bar lives in the titlebar band and the
-    // results dropdown overlays the content below it. Both are centered in the
-    // same container, so the dropdown needs only a vertical offset to hug the
-    // bar: band is 54 tall, field is 26 centered (bottom at 40), +5 gap.
-    private static let dropdownOffsetY: CGFloat = 45
-    @State private var searchQuery = ""
-    @State private var searchHighlighted = 0
+    // Search query shared with the sidebar filter. The toolbar search field writes
+    // here; SidebarView reads the same value to filter its rows in place.
+    @Binding var query: String
     @State private var searchFieldFocused = false
-
-    private var searchResults: [SearchIndex.Result] {
-        SearchIndex.results(model: model, query: searchQuery)
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -149,20 +141,14 @@ struct DetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.contentBackground.ignoresSafeArea())
-        .overlay(alignment: .topTrailing) {
-            searchDropdown
-        }
         // AppKit owns the complete toolbar so + and its native search item are
         // consecutive NSToolbar items, rather than separate SwiftUI placement zones.
         .background(
             NativeToolbarBridge(
                 model: model,
                 sidebarCollapsed: $sidebarCollapsed,
-                query: $searchQuery,
-                isSearchPresented: $searchFieldFocused,
-                highlighted: $searchHighlighted,
-                resultCount: searchResults.count,
-                onChoose: chooseHighlightedSearchResult
+                query: $query,
+                isSearchPresented: $searchFieldFocused
             )
         )
         // ⌘K (hidden button + global shortcut) asks the model to open search;
@@ -172,53 +158,13 @@ struct DetailView: View {
             model.showSearch = false
             searchFieldFocused.toggle()
         }
-        .onChange(of: searchQuery) { _, _ in searchHighlighted = 0 }
-        // Losing focus (Esc, ⌘K again, clicking the terminal) closes the dropdown
-        // and resets the bar to its placeholder, like a fresh Spotlight open.
+        // Losing focus (Esc, ⌘K again, clicking a terminal) clears the filter and
+        // resets the bar to its placeholder, like a fresh Spotlight open.
         .onChange(of: searchFieldFocused) { _, focused in
-            dbg("focused \(focused)")
             if !focused {
-                searchQuery = ""
-                searchHighlighted = 0
+                query = ""
             }
         }
-    }
-
-    @ViewBuilder
-    private var searchDropdown: some View {
-        // Hidden while focused with nothing to show: an empty query with no
-        // devices yet. A query with no matches still shows "No matches".
-        if searchFieldFocused, !searchResults.isEmpty || !searchQuery.isEmpty {
-            // fixedSize() stops the overlay from stretching this to fill the
-            // window; the Color.clear spacer provides the vertical offset so the
-            // dropdown hugs the top-right search bar, and the trailing inset keeps
-            // it horizontally aligned with the field wherever it sits.
-            VStack(spacing: 0) {
-                Color.clear.frame(height: Self.dropdownOffsetY)
-                SearchResultsDropdown(
-                    model: model,
-                    highlighted: $searchHighlighted,
-                    results: searchResults,
-                    onChoose: chooseSearchResult
-                )
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(width: SearchResultsDropdown.self.width)
-            .padding(.trailing, TitlebarMetrics.searchTrailingInset)
-        }
-    }
-
-    private func chooseSearchResult(_ result: SearchIndex.Result) {
-        dbg("choose \(result.id)")
-        switch result {
-        case .agent(let entry):
-            model.reveal(entry.ref)
-        case .terminal(let entry):
-            model.reveal(entry.ref)
-        case .space(let entry):
-            model.selectSpace(entry.ref)
-        }
-        searchFieldFocused = false
     }
 
     private var detailContent: some View {
@@ -233,21 +179,6 @@ struct DetailView: View {
     private var titlebar: some View {
         Color(hex: themeStore.activeTheme.background)
             .frame(height: TitlebarMetrics.height)
-    }
-
-    /// TEMPORARY debug tap for search interaction diagnostics; removed before ship.
-    private func dbg(_ msg: String) {
-        let line = "[\(Date())] \(msg)\n"
-        if let h = FileHandle(forWritingAtPath: "/tmp/fleecr-search-debug.log") {
-            _ = try? h.seekToEnd()
-            try? h.write(contentsOf: line.data(using: .utf8)!)
-            try? h.close()
-        }
-    }
-
-    private func chooseHighlightedSearchResult() {
-        guard searchResults.indices.contains(searchHighlighted) else { return }
-        chooseSearchResult(searchResults[searchHighlighted])
     }
 
     // MARK: - Terminal
