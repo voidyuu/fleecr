@@ -67,14 +67,6 @@ final class AppModel: ObservableObject {
     /// Transient action failures: shown as an alert, never by tearing down sessions.
     @Published var actionError: String?
 
-    /// A pending destructive close, confirmed via alert before running.
-    struct CloseRequest {
-        let title: String
-        let message: String
-        let perform: () -> Void
-    }
-    @Published var closeRequest: CloseRequest?
-
     private let store = DeviceStore()
     private var services: [UUID: HerdrService] = [:]
     private var sessionTasks: [UUID: Task<Void, Never>] = [:]
@@ -895,47 +887,34 @@ final class AppModel: ObservableObject {
     // MARK: - Closing
 
     func requestCloseSpace(_ entry: SpaceEntry) {
-        closeRequest = CloseRequest(
-            title: String(localized: "Close space \"\(entry.workspace.label)\" on \(entry.device.name)?"),
-            message: String(localized: "All terminals and agents in this space will be closed.")
-        ) { [weak self] in
-            guard let self else { return }
-            Task {
-                do {
-                    try await self.service(for: entry.device)
-                        .closeWorkspace(workspaceID: entry.workspace.workspaceID)
-                    if self.selectedSpace == entry.ref { self.selectedSpace = nil }
-                    await self.refresh(entry.device.id)
-                } catch {
-                    self.actionError = self.actionErrorMessage(error, device: entry.device)
-                }
+        Task {
+            do {
+                try await self.service(for: entry.device)
+                    .closeWorkspace(workspaceID: entry.workspace.workspaceID)
+                if self.selectedSpace == entry.ref { self.selectedSpace = nil }
+                await self.refresh(entry.device.id)
+            } catch {
+                self.actionError = self.actionErrorMessage(error, device: entry.device)
             }
         }
     }
 
     func requestClosePane(_ ref: PaneRef, name: String) {
         guard let device = device(ref.deviceID) else { return }
-        closeRequest = CloseRequest(
-            title: String(localized: "Close \"\(name)\"?"),
-            message: String(localized: "The pane and whatever is running inside it will be terminated.")
-        ) { [weak self] in
-            guard let self else { return }
-            Task {
-                do {
-                    try await self.service(for: device).closePane(paneID: ref.paneID)
-                    if self.selectedPane == ref { self.selectedPane = nil }
-                    await self.refresh(device.id)
-                } catch {
-                    self.actionError = self.actionErrorMessage(error, device: device)
-                }
+        Task {
+            do {
+                try await self.service(for: device).closePane(paneID: ref.paneID)
+                if self.selectedPane == ref { self.selectedPane = nil }
+                await self.refresh(device.id)
+            } catch {
+                self.actionError = self.actionErrorMessage(error, device: device)
             }
         }
     }
 
     // MARK: - Actions
 
-    /// Closes the currently selected agent or terminal pane (⌘W), asking for
-    /// confirmation before terminating whatever is running inside it.
+    /// Closes the currently selected agent or terminal pane (⌘W).
     func closeCurrentPane() {
         if let entry = selectedEntry {
             requestClosePane(entry.ref, name: entry.title)

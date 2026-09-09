@@ -101,21 +101,6 @@ struct RootView: View {
         } message: {
             Text(model.actionError ?? "")
         }
-        .alert(
-            model.closeRequest?.title ?? "",
-            isPresented: Binding(
-                get: { model.closeRequest != nil },
-                set: { if !$0 { model.closeRequest = nil } }
-            )
-        ) {
-            Button("Close", role: .destructive) {
-                model.closeRequest?.perform()
-                model.closeRequest = nil
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(model.closeRequest?.message ?? "")
-        }
     }
 
 }
