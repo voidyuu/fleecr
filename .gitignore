@@ -9,3 +9,6 @@ Sources/Info.plist
 **/xcuserdata/
 **/.build/
 **/.swiftpm/
+
+# cua-driver screenshots
+.cua/

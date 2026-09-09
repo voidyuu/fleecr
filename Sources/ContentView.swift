@@ -35,7 +35,7 @@ struct RootView: View {
                     .fill(Theme.sidebarBorder)
                     .frame(width: sidebarCollapsed ? 0 : 1)
                     .ignoresSafeArea()
-                DetailView(model: model, sidebarCollapsed: $sidebarCollapsed)
+                DetailView(model: model)
             }
             .animation(.easeInOut(duration: 0.2), value: sidebarCollapsed)
             .ignoresSafeArea(edges: .top)
@@ -73,17 +73,7 @@ struct RootView: View {
             window?.styleMask.insert(.fullSizeContentView)
         })
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    sidebarCollapsed.toggle()
-                } label: {
-                    Image(systemName: sidebarCollapsed ? "sidebar.right" : "sidebar.left")
-                }
-                .help("Toggle sidebar (⌘B)")
-                .accessibilityLabel("Toggle sidebar")
-            }
-        }
+        .toolbar { toolbarContent }
         .frame(minWidth: 980, minHeight: 620)
         .onAppear {
             model.start()
@@ -124,26 +114,68 @@ struct RootView: View {
             Text(model.closeRequest?.message ?? "")
         }
     }
+
+    /// Extracted so the giant `body` chain stays type-checkable.
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button {
+                sidebarCollapsed.toggle()
+            } label: {
+                Image(systemName: "sidebar.left")
+            }
+            .help("Toggle sidebar (⌘B)")
+            .accessibilityLabel("Toggle sidebar")
+        }
+        ToolbarItem(placement: .navigation) {
+            Button {
+                if let space = model.currentSpace, let device = model.device(space.deviceID) {
+                    model.createNewSpace(on: device)
+                }
+            } label: {
+                Image(systemName: "folder.badge.plus")
+            }
+            .help("New Space")
+            .accessibilityLabel("New Space")
+        }
+        if #available(macOS 26.0, *) {
+            ToolbarSpacer(.flexible, placement: .primaryAction)
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                model.startNewTerminal()
+            } label: {
+                Image(systemName: "plus")
+            }
+            .help("New Terminal (⌘T)")
+            .accessibilityLabel("New Terminal")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                model.showSearch = true
+            } label: {
+                Image(systemName: "magnifyingglass")
+            }
+            .help("Search (⌘K)")
+            .accessibilityLabel("Search")
+        }
+    }
 }
 
-/// Titlebar metrics: 28pt matches the system traffic-light centerline (14pt) exactly.
+/// Height of the band the native unified toolbar (52pt) occupies: the detail region reserves
+/// it so the terminal never renders under the traffic lights — all toolbar content is native.
 enum TitlebarMetrics {
-    static let height: CGFloat = 28
-    static let trafficLightClearance: CGFloat = 78
+    static let height: CGFloat = 54
 }
 
 struct DetailView: View {
     @ObservedObject var model: AppModel
-    @Binding var sidebarCollapsed: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             titlebar
-                .background(Color(hex: themeStore.activeTheme.background))
-                .zIndex(1)
             detailContent
         }
-        .padding(.top, 48)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.contentBackground.ignoresSafeArea())
     }
@@ -152,99 +184,14 @@ struct DetailView: View {
         terminal.clipped()
     }
 
-    // MARK: - Titlebar strip (28pt, traditional)
+    // MARK: - Toolbar band
 
+    /// Empty band behind the native unified toolbar: reserves its height so the terminal
+    /// stays below the traffic lights, and carries the theme background flush to the top
+    /// edge. The toolbar's own items (sidebar toggle left, New Terminal right) are native.
     private var titlebar: some View {
-        HStack(spacing: 8) {
-            if let attached = model.selectedAttachedEntry {
-                switch attached {
-                case .agent(let entry):
-                    let agent = entry.agent
-                    statusGlyph(agent.status)
-                    Text(entry.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                        .layoutPriority(1)
-                        .help((agent.cwd as NSString?)?.abbreviatingWithTildeInPath ?? "")
-                    Spacer(minLength: 12)
-                    AgentKindBadge(kind: agent.agent)
-                    Text("\u{b7}")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.textGhost)
-                    Text(model.spaceName(deviceID: entry.device.id, workspaceID: agent.workspaceID))
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1)
-                    if model.showsRowDeviceBadges {
-                        DeviceChip(device: entry.device)
-                    }
-                    statusPill(agent.status)
-                case .terminal(let entry):
-                    Image(systemName: "terminal")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.textTertiary)
-                    Text(entry.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                        .layoutPriority(1)
-                        .help((entry.pane.cwd as NSString?)?.abbreviatingWithTildeInPath ?? "")
-                    Spacer(minLength: 12)
-                    Text(model.spaceName(deviceID: entry.device.id, workspaceID: entry.pane.workspaceID))
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1)
-                    if model.showsRowDeviceBadges {
-                        DeviceChip(device: entry.device)
-                    }
-                }
-            } else {
-                Text("No terminal selected")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.textTertiary)
-                Spacer()
-            }
-        }
-        .padding(.leading, sidebarCollapsed ? 10 : 14)
-        .padding(.trailing, 12)
-        .frame(height: TitlebarMetrics.height)
-    }
-
-    @ViewBuilder
-    private func statusGlyph(_ status: AgentStatus) -> some View {
-        switch status {
-        case .working:
-            SpinnerView(color: Theme.working).frame(width: 13, height: 13)
-        case .blocked:
-            Image(systemName: "exclamationmark.circle")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.warning)
-        case .done:
-            EmptyView()
-        case .idle, .unknown:
-            EmptyView()
-        }
-    }
-
-    @ViewBuilder
-    private func statusPill(_ status: AgentStatus) -> some View {
-        let label: String? = {
-            switch status {
-            case .working: return String(localized: "Working")
-            case .blocked: return String(localized: "Needs input")
-            case .done: return String(localized: "Done")
-            case .idle, .unknown: return nil
-            }
-        }()
-        if let label {
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.statusColor(status))
-                .padding(.horizontal, 8)
-                .frame(height: 20)
-                .background(Theme.statusColor(status).opacity(0.13), in: Capsule())
-        }
+        Color(hex: themeStore.activeTheme.background)
+            .frame(height: TitlebarMetrics.height)
     }
 
     // MARK: - Terminal

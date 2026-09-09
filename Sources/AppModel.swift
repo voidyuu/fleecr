@@ -122,8 +122,10 @@ final class AppModel: ObservableObject {
     }
 
     /// Aggregate connection state for the current scope (footer dot, hints).
+    /// Counts every device except those disabled in Settings — a disabled device's
+    /// session stays `.idle` and must not make the indicator look disconnected.
     var connection: ConnectionState {
-        let states = devicesInScope.map { session($0.id).connection }
+        let states = devicesInScope.filter(\.isEnabled).map { session($0.id).connection }
         if let failed = states.first(where: { if case .failed = $0 { return true }; return false }) {
             return failed
         }

@@ -32,52 +32,11 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 1) {
-                // Persistent Herdr terminals are listed under TERMINALS below.
-                actionRow(icon: "terminal", label: "New Terminal") {
-                    model.startNewTerminal()
-                }
-                actionRow(icon: "magnifyingglass", label: "Search") {
-                    model.showSearch = true
-                }
-            }
-            .padding(.horizontal, 10)
-
             Spacer().frame(height: 10)
 
             ScrollView {
                 VStack(spacing: 1) {
-                    // Title + chevron used to be a decorative HStack with no
-                    // tap target, so the chevron promised a disclosure that
-                    // never fired. The trailing menu does not toggle the section.
-                    groupHeader("Spaces", expanded: $spacesExpanded) {
-                        Group {
-                            if model.devices.count == 1, let device = model.devices.first {
-                                Button { model.createNewSpace(on: device) } label: {
-                                    Image(systemName: "folder.badge.plus")
-                                        .font(.system(size: 11.5))
-                                        .foregroundStyle(Theme.textGhost)
-                                        .frame(width: 20, height: 20)
-                                        .contentShape(Rectangle())
-                                }
-                            } else {
-                                Menu {
-                                    ForEach(model.devices) { device in
-                                        Button(device.name) { model.createNewSpace(on: device) }
-                                    }
-                                } label: {
-                                    Image(systemName: "folder.badge.plus")
-                                        .font(.system(size: 11.5))
-                                        .foregroundStyle(Theme.textGhost)
-                                        .frame(width: 20, height: 20)
-                                        .contentShape(Rectangle())
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .help("New Space")
-                        .focusEffectDisabled()
-                    }
+                    groupHeader("Spaces", expanded: $spacesExpanded)
                     if spacesExpanded {
                         ForEach(model.visibleSpaces) { entry in
                             SpaceRowView(
@@ -341,42 +300,18 @@ struct SidebarView: View {
     }
 }
 
-    // MARK: - Footer (status & settings)
+    // MARK: - Footer (connection status)
 
     private var footer: some View {
         HStack(spacing: 7) {
             Circle()
                 .fill(connectionDotColor)
                 .frame(width: 6, height: 6)
-            Text(connectionStatusText)
-                .font(.system(size: 11.5))
-                .foregroundStyle(Theme.textTertiary)
-                .lineLimit(1)
 
             Spacer()
-
-            SettingsLink {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(Theme.textTertiary)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("Settings (⌘,)")
         }
         .padding(.horizontal, 12)
         .frame(height: 40)
-    }
-
-    private var connectionStatusText: String {
-        switch model.connection {
-        case .connected: return String(localized: "Connected")
-        case .connecting: return String(localized: "Connecting…")
-        case .failed(let reason): return reason
-        case .idle: return String(localized: "Idle")
-        }
     }
 
     private var connectionDotColor: Color {
