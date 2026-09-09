@@ -8,6 +8,7 @@ the Sparkle update description — a release without a section here fails CI.
 ## [Unreleased]
 
 ### Changed
+- The ⌘N shortcut now creates a new space (previously ⌘⇧N).
 - The ⌘K search panel is now a native-style search bar that lives in the
   toolbar: results appear in a dropdown below the bar while typing, ranked the
   same way as before (needs input, unread, working, then the rest). ⌘K toggles
@@ -27,6 +28,10 @@ the Sparkle update description — a release without a section here fails CI.
   terminal's OSC title into the backend label.
 
 ### Added
+- A default ⌘W shortcut closes the currently selected terminal or agent pane
+  (with the usual confirmation), instead of closing the window. It applies only
+  while the main console window is focused — with the Settings window focused,
+  ⌘W keeps its system meaning and closes that window.
 - Terminals can be renamed from the sidebar context menu. The tab label is
   written to herdr and displayed over the pane's OSC title, so renames are
   always visible.

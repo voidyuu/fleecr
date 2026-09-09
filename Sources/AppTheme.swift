@@ -27,12 +27,12 @@ enum AppTheme: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .terminalDark: "Terminal Dark"
-        case .terminalLight: "Terminal Light"
-        case .afterglow: "Afterglow"
-        case .alabaster: "Alabaster"
-        case .gruvbox: "Gruvbox"
-        case .dracula: "Dracula"
+        case .terminalDark: String(localized: "theme.terminalDark", defaultValue: "Terminal Dark")
+        case .terminalLight: String(localized: "theme.terminalLight", defaultValue: "Terminal Light")
+        case .afterglow: String(localized: "theme.afterglow", defaultValue: "Afterglow")
+        case .alabaster: String(localized: "theme.alabaster", defaultValue: "Alabaster")
+        case .gruvbox: String(localized: "theme.gruvbox", defaultValue: "Gruvbox")
+        case .dracula: String(localized: "theme.dracula", defaultValue: "Dracula")
         }
     }
 
@@ -134,9 +134,9 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .system: "System"
-        case .light: "Light"
-        case .dark: "Dark"
+        case .system: String(localized: "theme.system", defaultValue: "System")
+        case .light: String(localized: "theme.light", defaultValue: "Light")
+        case .dark: String(localized: "theme.dark", defaultValue: "Dark")
         }
     }
     var isDark: Bool {

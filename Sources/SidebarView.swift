@@ -81,7 +81,7 @@ struct SidebarView: View {
                             ForEach(displayTerminals) { entry in
                                 terminalRow(entry)
                                     .contextMenu {
-                                        Button("Rename Terminal…") { model.terminalToRename = entry }
+                                        Button(String(localized: "Rename Terminal…")) { model.terminalToRename = entry }
                                         Button("Close Terminal…", role: .destructive) {
                                             model.requestClosePane(entry.ref, name: entry.title)
                                         }

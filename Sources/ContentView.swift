@@ -70,6 +70,9 @@ struct RootView: View {
         }
         .focusedSceneValue(\.appModel, model)
         .background(WindowAccessor { window in
+            // Distinctive identifier so shortcut handling can tell the main
+            // console window apart from e.g. the Settings window.
+            window?.identifier = NSUserInterfaceItemIdentifier("herdrm.main")
             window?.titlebarAppearsTransparent = true
             window?.styleMask.insert(.fullSizeContentView)
         })

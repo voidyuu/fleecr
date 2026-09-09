@@ -59,6 +59,19 @@ final class ShortcutDispatcher {
             model.createNewSpace()
             return true
 
+        case "closePane":
+            // ⌘W only closes the currently selected pane while the main console
+            // window is focused. Anywhere else (e.g. the Settings window) it
+            // falls through to the default "Close" command so the focused
+            // window (Settings) closes instead of a pane in a window you can't
+            // even see.
+            let mainWindowID = NSUserInterfaceItemIdentifier("herdrm.main")
+            if NSApp.keyWindow?.identifier == mainWindowID {
+                model.closeCurrentPane()
+                return true
+            }
+            return false
+
         case "quickSearch":
             model.showSearch = true
             return true

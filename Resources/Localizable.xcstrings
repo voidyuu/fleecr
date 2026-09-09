@@ -769,6 +769,102 @@
         }
       }
     },
+    "theme.afterglow": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afterglow"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afterglow"
+          }
+        }
+      }
+    },
+    "theme.alabaster": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alabaster"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alabaster"
+          }
+        }
+      }
+    },
+    "theme.dracula": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dracula"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dracula"
+          }
+        }
+      }
+    },
+    "theme.gruvbox": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gruvbox"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gruvbox"
+          }
+        }
+      }
+    },
+    "theme.terminalDark": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal Dark"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端深色"
+          }
+        }
+      }
+    },
+    "theme.terminalLight": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal Light"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端浅色"
+          }
+        }
+      }
+    },
     "font.weight.light": {
       "localizations": {
         "en": {
@@ -1681,6 +1777,38 @@
         }
       }
     },
+    "Dark Mode Theme": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dark Mode Theme"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "深色模式主题"
+          }
+        }
+      }
+    },
+    "Light Mode Theme": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light Mode Theme"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "浅色模式主题"
+          }
+        }
+      }
+    },
     "Create Space": {
       "localizations": {
         "en": {
@@ -1885,6 +2013,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "重命名 Agent…"
+          }
+        }
+      }
+    },
+    "Rename Terminal…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rename Terminal…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重命名终端…"
           }
         }
       }

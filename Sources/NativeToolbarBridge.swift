@@ -82,7 +82,7 @@ struct NativeToolbarBridge: NSViewRepresentable {
             case ID.search:
                 let item = NSSearchToolbarItem(itemIdentifier: ID.search)
                 let field = NSSearchField()
-                field.placeholderString = "Search agents, terminals, and spaces…"
+                field.placeholderString = String(localized: "Search agents, terminals, and spaces…")
                 field.font = .systemFont(ofSize: 13)
                 field.delegate = self
                 // Deliberately NO target/action on the field itself. NSSearchField

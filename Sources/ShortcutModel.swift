@@ -278,8 +278,16 @@ extension ShortcutItem {
             name: String(localized: "shortcut.action.newSpace", defaultValue: "New Space"),
             category: .general,
             icon: "folder.badge.plus",
-            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_ANSI_N), modifiers: [.command, .shift], keyDisplay: "N"),
+            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_ANSI_N), modifiers: [.command], keyDisplay: "N"),
             description: String(localized: "shortcut.desc.newSpace", defaultValue: "Create a new workspace space")
+        ),
+        ShortcutItem(
+            id: "closePane",
+            name: String(localized: "shortcut.action.closePane", defaultValue: "Close Current Pane"),
+            category: .general,
+            icon: "xmark.square",
+            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_ANSI_W), modifiers: [.command], keyDisplay: "W"),
+            description: String(localized: "shortcut.desc.closePane", defaultValue: "Close the currently selected terminal or agent")
         ),
         ShortcutItem(
             id: "openSettings",

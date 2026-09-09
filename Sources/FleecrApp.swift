@@ -97,14 +97,14 @@ struct FleecrApp: App {
                     .keyboardShortcut("t", modifiers: .command)
                 if model.devices.count == 1, let device = model.devices.first {
                     Button("New Space") { model.createNewSpace(on: device) }
-                        .keyboardShortcut("n", modifiers: [.command, .shift])
+                        .keyboardShortcut("n", modifiers: .command)
                 } else {
                     Menu("New Space") {
                         ForEach(model.devices) { device in
                             Button(device.name) { model.createNewSpace(on: device) }
                         }
                     }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                    .keyboardShortcut("n", modifiers: .command)
                 }
             }
 

@@ -934,6 +934,16 @@ final class AppModel: ObservableObject {
 
     // MARK: - Actions
 
+    /// Closes the currently selected agent or terminal pane (⌘W), asking for
+    /// confirmation before terminating whatever is running inside it.
+    func closeCurrentPane() {
+        if let entry = selectedEntry {
+            requestClosePane(entry.ref, name: entry.title)
+        } else if let entry = selectedTerminalEntry {
+            requestClosePane(entry.ref, name: entry.title)
+        }
+    }
+
     /// Renames a space in the backend (`workspace.rename`); herdr is the sole
     /// owner of space names, so herdrm never writes one on its own.
     func renameSpace(_ entry: SpaceEntry, label: String) {
