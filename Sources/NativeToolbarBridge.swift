@@ -11,9 +11,6 @@ struct NativeToolbarBridge: NSViewRepresentable {
     @Binding var sidebarCollapsed: Bool
     @Binding var query: String
     @Binding var isSearchPresented: Bool
-    @Binding var highlighted: Int
-    var resultCount: Int
-    var onChoose: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -42,6 +39,11 @@ struct NativeToolbarBridge: NSViewRepresentable {
         var parent: NativeToolbarBridge
         private weak var installedWindow: NSWindow?
         private var searchItem: NSSearchToolbarItem?
+        private var returnGuard: Any?
+        /// 0.3s debounce so the sidebar filter isn't recomputed on every keystroke;
+        /// it only updates after typing pauses for a moment.
+        private static let searchDebounce: TimeInterval = 0.3
+        private var debounceTask: Task<Void, Never>?
 
         init(_ parent: NativeToolbarBridge) { self.parent = parent }
 
@@ -83,8 +85,13 @@ struct NativeToolbarBridge: NSViewRepresentable {
                 field.placeholderString = "Search agents, terminals, and spaces…"
                 field.font = .systemFont(ofSize: 13)
                 field.delegate = self
-                field.target = self
-                field.action = #selector(submitSearch)
+                // Deliberately NO target/action on the field itself. NSSearchField
+                // fires the action on EVERY keystroke (`sendsSearchStringImmediately`),
+                // which would submit/clear the search as soon as the user types the
+                // first character. Live filtering is driven by controlTextDidChange;
+                // submit is driven by the Return key monitor below instead.
+                field.target = nil
+                field.action = nil
                 item.searchField = field
                 item.preferredWidthForSearchField = 320
                 searchItem = item
@@ -114,9 +121,9 @@ struct NativeToolbarBridge: NSViewRepresentable {
             guard let field = searchItem?.searchField else { return }
             // Never clobber the field while it's the active editor. Programmatically
             // setting stringValue over an in-progress IME composition (Chinese/Japanese
-            // pinyin) destroys the marked text, so typing with an input method fails.
-            // During editing the field is the source of truth; only push an external
-            // value in (e.g. clearing on blur) when it isn't being edited.
+            // pinyin) destroys the marked text, so typing with an input method
+            // fails. During editing the field is the source of truth; only push
+            // an external value in (e.g. clearing on blur) when it isn't being edited.
             let isEditing = field.currentEditor() != nil && field.window?.firstResponder === field.currentEditor()
             if !isEditing, field.stringValue != parent.query {
                 field.stringValue = parent.query
@@ -132,24 +139,87 @@ struct NativeToolbarBridge: NSViewRepresentable {
             guard let space = parent.model.currentSpace, let device = parent.model.device(space.deviceID) else { return }
             parent.model.createNewSpace(on: device)
         }
-        @objc private func submitSearch() { parent.onChoose() }
+        private func submitSearch() {
+            // Enter commits: clears the field and drops focus (the filter releases
+            // back to the full list). Not reached while an IME is composing — the
+            // return guard swallows that Return so it commits text instead.
+            guard let field = searchItem?.searchField else { return }
+            parent.query = ""
+            parent.isSearchPresented = false
+            field.window?.makeFirstResponder(nil)
+        }
 
         func controlTextDidChange(_ obj: Notification) {
             guard let field = obj.object as? NSSearchField else { return }
-            parent.query = field.stringValue
+            // Debounce: buffer keystrokes, applying the query only after the user
+            // pauses. A pending update is cancelled and restarted on each keystroke.
+            debounceTask?.cancel()
+            debounceTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(Self.searchDebounce * 1_000_000_000))
+                guard let self else { return }
+                self.parent.query = field.stringValue
+            }
         }
-        func controlTextDidBeginEditing(_ obj: Notification) { parent.isSearchPresented = true }
-        func controlTextDidEndEditing(_ obj: Notification) { parent.isSearchPresented = false }
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            parent.isSearchPresented = true
+            installReturnGuard()
+        }
+        func controlTextDidEndEditing(_ obj: Notification) {
+            parent.isSearchPresented = false
+            removeReturnGuard()
+            // Drop any pending update: leaving the field clears the search, and a
+            // stale debounce firing afterwards would re-filter with the old text.
+            debounceTask?.cancel()
+            debounceTask = nil
+        }
+
+        // Enter handling lives in a local key monitor rather than the field's own
+        // action. With a Chinese/Japanese/Korean input method, Return is what
+        // "commits the pinyin candidate into the field". When there is an
+        // in-progress composition (marked text), that Return must go to the input
+        // method — never trigger a submit. When there is no composition, Return is
+        // the ordinary "commit/dismiss the search" key. The monitor is armed only
+        // while this field is the active editor, so it affects nothing else.
+        private func installReturnGuard() {
+            guard returnGuard == nil else { return }
+            let token = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self else { return event }
+                // Only act while the search field itself is the active editor.
+                guard let field = self.searchItem?.searchField,
+                      field.window?.firstResponder === field.currentEditor(),
+                      let editor = field.currentEditor() as? NSTextView
+                else { return event }
+                let isEnter = event.keyCode == 36 || event.keyCode == 76 // Return / keypad-Enter
+                if editor.hasMarkedText() {
+                    // A CJK input method is composing: Return commits the candidate
+                    // into the field, so hand it to the IME and never submit.
+                    if isEnter {
+                        editor.interpretKeyEvents([event])
+                        return nil
+                    }
+                    return event
+                }
+                if isEnter {
+                    // Real Return = commit/dismiss the search.
+                    self.submitSearch()
+                    return nil
+                }
+                return event
+            }
+            returnGuard = token
+        }
+
+        private func removeReturnGuard() {
+            if let token = returnGuard {
+                NSEvent.removeMonitor(token)
+                returnGuard = nil
+            }
+        }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
             switch commandSelector {
-            case #selector(NSResponder.moveDown(_:)):
-                parent.highlighted = min(parent.highlighted + 1, max(parent.resultCount - 1, 0))
-                return true
-            case #selector(NSResponder.moveUp(_:)):
-                parent.highlighted = max(parent.highlighted - 1, 0)
-                return true
             case #selector(NSResponder.cancelOperation(_:)):
+                parent.query = ""
                 parent.isSearchPresented = false
                 control.window?.makeFirstResponder(nil)
                 return true
