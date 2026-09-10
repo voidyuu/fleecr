@@ -945,6 +945,9 @@ func applyTerminalAppearance(
         builder.withBackground(theme.background)
         builder.withForeground(theme.foreground)
         builder.withSelectionBackground(theme.selection)
+        if let selFg = theme.selectionForeground {
+            builder.withSelectionForeground(selFg)
+        }
         builder.withCursorColor(theme.cursor)
         for (idx, color) in theme.ansi.enumerated() {
             builder.withPalette(idx, color: color)

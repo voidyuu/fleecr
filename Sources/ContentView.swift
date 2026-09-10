@@ -121,6 +121,11 @@ struct DetailView: View {
     // here; SidebarView reads the same value to filter its rows in place.
     @Binding var query: String
     @State private var searchFieldFocused = false
+    @ObservedObject private var themeStore = ThemeStore.shared
+
+    private var terminalBackground: Color {
+        Color(hex: themeStore.activeTheme.background)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -128,7 +133,7 @@ struct DetailView: View {
             detailContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.contentBackground.ignoresSafeArea())
+        .background(terminalBackground.ignoresSafeArea())
         // AppKit owns the complete toolbar so + and its native search item are
         // consecutive NSToolbar items, rather than separate SwiftUI placement zones.
         .background(
@@ -165,7 +170,7 @@ struct DetailView: View {
     /// traffic lights. Search itself is a native `.searchable` toolbar item, which
     /// macOS places immediately to the left of the New Terminal (+) action.
     private var titlebar: some View {
-        Color(hex: themeStore.activeTheme.background)
+        terminalBackground
             .frame(height: TitlebarMetrics.height)
     }
 
@@ -177,7 +182,6 @@ struct DetailView: View {
     @AppStorage(TerminalDefaults.fontWeightKey) private var terminalFontWeight = TerminalDefaults.defaultFontWeight
     @AppStorage(TerminalDefaults.lineSpacingKey) private var terminalLineSpacing = TerminalDefaults.defaultLineSpacing
     @AppStorage(TerminalDefaults.mouseReportingKey) private var terminalMouseReporting = TerminalDefaults.defaultMouseReporting
-    @ObservedObject private var themeStore = ThemeStore.shared
     /// The entry whose attach process exited, and how. Keyed by entry id so a stale
     /// exit from a previously selected pane never covers a live terminal.
     @State private var endedAttachKey: String?
@@ -226,7 +230,7 @@ struct DetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.terminalBackground)
+            .background(terminalBackground)
             .overlay(alignment: .bottomTrailing) {
                 if uploadingAttachment { uploadIndicator }
             }
@@ -250,7 +254,7 @@ struct DetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Theme.terminalBackground)
+            .background(terminalBackground)
         }
     }
 
@@ -278,7 +282,7 @@ struct DetailView: View {
             .keyboardShortcut(.defaultAction)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.terminalBackground.opacity(0.94))
+        .background(terminalBackground.opacity(0.94))
     }
 
     private var uploadIndicator: some View {

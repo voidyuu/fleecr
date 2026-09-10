@@ -163,6 +163,7 @@ struct TerminalSettingsView: View {
     @AppStorage(TerminalDefaults.fontWeightKey) private var fontWeight = TerminalDefaults.defaultFontWeight
     @AppStorage(TerminalDefaults.lineSpacingKey) private var lineSpacing = TerminalDefaults.defaultLineSpacing
     @AppStorage(TerminalDefaults.mouseReportingKey) private var mouseReporting = TerminalDefaults.defaultMouseReporting
+    @ObservedObject private var themeStore = ThemeStore.shared
 
     private let families = TerminalDefaults.monospacedFamilies()
 
@@ -249,10 +250,11 @@ struct TerminalSettingsView: View {
                     .foregroundStyle(.secondary)
                 Text("❯ herdr agent attach w1:p1 — 中文 ABC 0123")
                     .font(Font(TerminalDefaults.font(name: fontName, size: fontSize, weight: fontWeight)))
+                    .foregroundStyle(Color(hex: themeStore.activeTheme.foreground))
                     .lineLimit(1)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.terminalBackground, in: RoundedRectangle(cornerRadius: 6))
+                    .background(Color(hex: themeStore.activeTheme.background), in: RoundedRectangle(cornerRadius: 6))
             }
         }
         .padding(20)
@@ -338,7 +340,7 @@ struct AppearanceSettingsView: View {
                     RoundedRectangle(cornerRadius: 3)
                         .strokeBorder(Theme.sidebarBorder, lineWidth: 1)
                 )
-            Text(theme.displayName)
+            Text(verbatim: theme.displayName)
         }
     }
 

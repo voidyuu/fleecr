@@ -810,16 +810,8 @@ final class AppModel: ObservableObject {
                !snapshot.workspaces.contains(where: { $0.workspaceID == space.workspaceID }) {
                 selectedSpace = nil
             }
-            if selectedSpace == nil {
-                if let focusedWorkspaceID = snapshot.focusedWorkspaceID,
-                   snapshot.workspaces.contains(where: { $0.workspaceID == focusedWorkspaceID }) {
-                    selectedSpace = SpaceRef(deviceID: deviceID, workspaceID: focusedWorkspaceID)
-                } else {
-                    selectedSpace = visibleSpaces.first?.ref
-                }
-            }
             // Selection is manual only: a periodic refresh must never pick or
-            // jump a pane for the user. The pane they clicked stays selected;
+            // jump a space or pane for the user. What they clicked stays selected;
             // if they have nothing selected it stays unselected until they click.
         } catch {
             sessions[deviceID]?.connection = .failed(error.localizedDescription)
