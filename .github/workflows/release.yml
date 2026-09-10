@@ -12,11 +12,20 @@ on:
 
 jobs:
   release:
-    runs-on: macos-14
+    runs-on: macos-15
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: |
+          XCODE_PATH=$(find /Applications -maxdepth 1 -name "Xcode_16*.app" | sort -V | tail -n 1)
+          if [ -n "$XCODE_PATH" ]; then
+            echo "Selecting $XCODE_PATH"
+            sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          fi
+          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
