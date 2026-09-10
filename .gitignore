@@ -15,3 +15,6 @@ Sources/Info.plist
 
 # test coverage raw profiles
 *.profraw
+
+# release archives
+*.zip

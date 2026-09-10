@@ -1,4 +1,4 @@
-.PHONY: gen build run test kit-test app-test clean
+.PHONY: gen build run test kit-test app-test clean release
 
 CODE_SIGN_IDENTITY ?= ""
 CODE_SIGNING_REQUIRED ?= NO
@@ -12,6 +12,9 @@ build: gen
 run: build
 	open build/Build/Products/Debug/Fleecr.app
 
+release:
+	@bash scripts/release.sh $(VERSION)
+
 kit-test:
 	cd Packages/HerdrKit && swift test
 
@@ -21,4 +24,4 @@ app-test: gen
 test: kit-test app-test
 
 clean:
-	rm -rf build build-rel *.xcodeproj Packages/*/.build
+	rm -rf build build-rel *.xcodeproj Packages/*/.build fleecr-*.zip
