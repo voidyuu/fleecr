@@ -3409,6 +3409,70 @@
         }
       }
     },
+    "shortcut.action.nextTab": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next Tab"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一个标签"
+          }
+        }
+      }
+    },
+    "shortcut.desc.nextTab": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to next agent or terminal tab"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换到下一个终端或 Agent 标签"
+          }
+        }
+      }
+    },
+    "shortcut.action.previousTab": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous Tab"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一个标签"
+          }
+        }
+      }
+    },
+    "shortcut.desc.previousTab": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to previous agent or terminal tab"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到上一个终端或 Agent 标签"
+          }
+        }
+      }
+    },
     "shortcut.action.newTerminal": {
       "localizations": {
         "en": {

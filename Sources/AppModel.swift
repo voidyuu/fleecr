@@ -288,6 +288,7 @@ final class AppModel: ObservableObject {
         guard let space = selectedSpace, let device = device(space.deviceID) else { return [] }
         let state = session(device.id)
         let tabsByID = Dictionary(uniqueKeysWithValues: state.tabs.map { ($0.tabID, $0) })
+        let tabRanks = Dictionary(uniqueKeysWithValues: state.tabs.enumerated().map { ($1.tabID, $0) })
         return state.panes.compactMap { pane in
             guard pane.workspaceID == space.workspaceID, let terminalID = pane.terminalID else { return nil }
             return TerminalEntry(
@@ -297,6 +298,7 @@ final class AppModel: ObservableObject {
                 terminalID: terminalID
             )
         }
+        .sorted { (tabRanks[$0.pane.tabID ?? ""] ?? Int.max) < (tabRanks[$1.pane.tabID ?? ""] ?? Int.max) }
     }
 
     func isUnread(_ entry: AgentEntry) -> Bool {
@@ -943,6 +945,39 @@ final class AppModel: ObservableObject {
             requestClosePane(entry.ref, name: entry.title)
         } else if let entry = selectedTerminalEntry {
             requestClosePane(entry.ref, name: entry.title)
+        }
+    }
+
+    /// All selectable tab pane references in the currently active space,
+    /// combining both agent tabs and terminal tabs.
+    var allVisibleTabPaneRefs: [PaneRef] {
+        if selectedSpace == nil, let fallback = currentSpace {
+            selectedSpace = fallback
+        }
+        return visibleAgents.map(\.ref) + visibleTerminals.map(\.ref)
+    }
+
+    /// Cycles to the next tab (agent or terminal) in the current space.
+    func selectNextTab() {
+        let tabs = allVisibleTabPaneRefs
+        guard !tabs.isEmpty else { return }
+        if let current = selectedPane, let currentIndex = tabs.firstIndex(of: current) {
+            let nextIndex = (currentIndex + 1) % tabs.count
+            selectedPane = tabs[nextIndex]
+        } else {
+            selectedPane = tabs.first
+        }
+    }
+
+    /// Cycles to the previous tab (agent or terminal) in the current space.
+    func selectPreviousTab() {
+        let tabs = allVisibleTabPaneRefs
+        guard !tabs.isEmpty else { return }
+        if let current = selectedPane, let currentIndex = tabs.firstIndex(of: current) {
+            let prevIndex = (currentIndex - 1 + tabs.count) % tabs.count
+            selectedPane = tabs[prevIndex]
+        } else {
+            selectedPane = tabs.last
         }
     }
 

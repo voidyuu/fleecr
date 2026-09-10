@@ -72,6 +72,22 @@ final class ShortcutDispatcher {
             }
             return false
 
+        case "nextTab":
+            let mainWindowID = NSUserInterfaceItemIdentifier("fleecr.main")
+            if NSApp.keyWindow?.identifier == mainWindowID && NSApp.keyWindow?.attachedSheet == nil {
+                model.selectNextTab()
+                return true
+            }
+            return false
+
+        case "previousTab":
+            let mainWindowID = NSUserInterfaceItemIdentifier("fleecr.main")
+            if NSApp.keyWindow?.identifier == mainWindowID && NSApp.keyWindow?.attachedSheet == nil {
+                model.selectPreviousTab()
+                return true
+            }
+            return false
+
         case "quickSearch":
             model.showSearch = true
             return true

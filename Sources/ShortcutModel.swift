@@ -266,6 +266,22 @@ extension ShortcutItem {
             description: String(localized: "shortcut.desc.toggleSidebar", defaultValue: "Show or hide the workspace sidebar")
         ),
         ShortcutItem(
+            id: "nextTab",
+            name: String(localized: "shortcut.action.nextTab", defaultValue: "Next Tab"),
+            category: .general,
+            icon: "arrow.right.to.line",
+            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_Tab), modifiers: [.control], keyDisplay: "⇥"),
+            description: String(localized: "shortcut.desc.nextTab", defaultValue: "Switch to next agent or terminal tab")
+        ),
+        ShortcutItem(
+            id: "previousTab",
+            name: String(localized: "shortcut.action.previousTab", defaultValue: "Previous Tab"),
+            category: .general,
+            icon: "arrow.left.to.line",
+            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_Tab), modifiers: [.shift], keyDisplay: "⇥"),
+            description: String(localized: "shortcut.desc.previousTab", defaultValue: "Switch to previous agent or terminal tab")
+        ),
+        ShortcutItem(
             id: "newTerminal",
             name: String(localized: "shortcut.action.newTerminal", defaultValue: "New Terminal"),
             category: .general,
@@ -498,9 +514,10 @@ public final class ShortcutStore: ObservableObject {
 
                 // 4. Validate combination
                 let isFn = KeyCombination.isFunctionKey(keyCode)
+                let isTab = keyCode == UInt16(kVK_Tab)
                 let hasCmdOptCtrl = relevantModifiers.contains(.command) || relevantModifiers.contains(.option) || relevantModifiers.contains(.control)
 
-                if isFn || hasCmdOptCtrl {
+                if isFn || isTab || hasCmdOptCtrl {
                     let display = KeyCombination.displayString(for: keyCode, characters: event.charactersIgnoringModifiers)
                     let comb = KeyCombination(keyCode: keyCode, modifiers: relevantModifiers, keyDisplay: display)
                     self.setShortcut(comb, forItemID: currentID)
