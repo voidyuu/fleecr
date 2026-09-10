@@ -7,6 +7,8 @@ the Sparkle update description — a release without a section here fails CI.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-10
+
 ### Changed
 - The ⌘N shortcut now creates a new space (previously ⌘⇧N).
 - The ⌘K search panel is now a native-style search bar that lives in the

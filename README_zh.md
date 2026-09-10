@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/voidyuu/herdrm/releases/latest"><img src="https://img.shields.io/github/v/release/voidyuu/herdrm?color=blue" alt="最新版本" /></a>
+  <a href="https://github.com/voidyuu/fleecr/releases/latest"><img src="https://img.shields.io/github/v/release/voidyuu/fleecr?color=blue" alt="最新版本" /></a>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-007AFF?logo=apple&logoColor=white" alt="macOS 14.0+" />
   <img src="https://img.shields.io/badge/终端核心-libghostty-FF6B6B" alt="libghostty" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/开源协议-MIT-green" alt="协议: MIT" /></a>
@@ -38,11 +38,11 @@
 
 **Homebrew**
 ```sh
-brew install owo-network/brew/fleecr
+brew install voidyuu/tap/fleecr
 ```
 
-**手动下载**  
-从 [Releases](https://github.com/voidyuu/herdrm/releases) 下载最新的通用二进制文件，解压后将 `Fleecr.app` 拖入 `/Applications` 文件夹即可。应用内置基于 Sparkle 的自动更新。
+**手动安装**  
+从 [Releases](https://github.com/voidyuu/fleecr/releases) 下载最新的通用二进制文件，解压后将 `Fleecr.app` 拖入 `/Applications` 文件夹即可。应用内置基于 Sparkle 的自动更新。
 
 ## 📋 运行要求
 

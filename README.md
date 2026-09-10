@@ -5,11 +5,12 @@
 <h1 align="center">fleecr</h1>
 
 <p align="center">
-  A native macOS client for <a href="https://herdr.dev/">herdr</a>, bringing your AI coding agents and live terminals together in one simple interface.
+  Yet another native macOS client for <a href="https://herdr.dev/">herdr</a>, bringing your AI coding agents and live terminals together in one simple interface.
 </p>
 
+
 <p align="center">
-  <a href="https://github.com/voidyuu/herdrm/releases/latest"><img src="https://img.shields.io/github/v/release/voidyuu/herdrm?color=blue" alt="Latest Release" /></a>
+  <a href="https://github.com/voidyuu/fleecr/releases/latest"><img src="https://img.shields.io/github/v/release/voidyuu/fleecr?color=blue" alt="Latest Release" /></a>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-007AFF?logo=apple&logoColor=white" alt="macOS 14.0+" />
   <img src="https://img.shields.io/badge/terminal-libghostty-FF6B6B" alt="libghostty" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT" /></a>
@@ -31,18 +32,17 @@
 - **💻 Powered by [libghostty](https://github.com/ghostty-org/ghostty)** — High-performance terminal emulation with real PTY attach, native text selection, Nerd Fonts, and 20+ built-in color themes.
 - **🤖 Universal Agent Hub** — First-class support for Claude Code, Codex, Cursor, Gemini, Grok, OpenCode, pi, Kimi, and custom CLI agents.
 - **🌐 Multi-Device Management** — Seamlessly manage local and remote machines over SSH (keys, passwords, or Tailscale) in a unified sidebar with auto-reconnect.
-- **📁 Smart Attachments & File Manager** — Drag and paste (⌘V) images/files directly into agents, plus a built-in two-pane remote file browser.
 - **⌨️ Keyboard-Driven** — Global ⌘K quick search, split panes (⌘D / ⇧⌘D), tab cycling (⌃⇥ / ⌃⇧⇥), and ambient notification alerts.
 
 ## 📦 Installation
 
 **Homebrew**
 ```sh
-brew install owo-network/brew/fleecr
+brew install voidyuu/tap/fleecr
 ```
 
 **Manual**  
-Download the latest universal binary from [Releases](https://github.com/voidyuu/herdrm/releases) and drag `Fleecr.app` into `/Applications`. Auto-updates are powered by Sparkle.
+Download the latest universal binary from [Releases](https://github.com/voidyuu/fleecr/releases) and drag `Fleecr.app` into `/Applications`. Auto-updates are powered by Sparkle.
 
 ## 📋 Requirements
 
