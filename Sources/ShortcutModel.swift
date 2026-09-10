@@ -278,7 +278,7 @@ extension ShortcutItem {
             name: String(localized: "shortcut.action.previousTab", defaultValue: "Previous Tab"),
             category: .general,
             icon: "arrow.left.to.line",
-            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_Tab), modifiers: [.shift], keyDisplay: "⇥"),
+            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_Tab), modifiers: [.control, .shift], keyDisplay: "⇥"),
             description: String(localized: "shortcut.desc.previousTab", defaultValue: "Switch to previous agent or terminal tab")
         ),
         ShortcutItem(

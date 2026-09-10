@@ -23,8 +23,8 @@ final class TabNavigationShortcutTests: XCTestCase {
 
         XCTAssertEqual(prevTab.category, .general)
         XCTAssertEqual(prevTab.defaultShortcut?.keyCode, UInt16(kVK_Tab))
-        XCTAssertEqual(prevTab.defaultShortcut?.modifierFlags, [.shift])
-        XCTAssertEqual(prevTab.defaultShortcut?.displayString, "⇧⇥")
+        XCTAssertEqual(prevTab.defaultShortcut?.modifierFlags, [.control, .shift])
+        XCTAssertEqual(prevTab.defaultShortcut?.displayString, "⌃⇧⇥")
     }
 
     func testShortcutStoreActionMatchingForTabEvents() {
@@ -49,7 +49,7 @@ final class TabNavigationShortcutTests: XCTestCase {
         guard let shiftTabEvent = NSEvent.keyEvent(
             with: .keyDown,
             location: .zero,
-            modifierFlags: [.shift],
+            modifierFlags: [.control, .shift],
             timestamp: 0,
             windowNumber: 0,
             context: nil,

@@ -28,7 +28,7 @@ the Sparkle update description — a release without a section here fails CI.
   terminal's OSC title into the backend label.
 
 ### Added
-- Tab navigation shortcuts: ⌃⇥ (Ctrl+Tab) switches to the next tab, and ⇧⇥ (Shift+Tab)
+- Tab navigation shortcuts: ⌃⇥ (Ctrl+Tab) switches to the next tab, and ⌃⇧⇥ (Ctrl+Shift+Tab)
   returns to the previous tab. The cycling loops through both agent and terminal
   tabs together in the current space. Both shortcuts are customizable in
   Preferences → Shortcuts.
