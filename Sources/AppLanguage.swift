@@ -2,7 +2,7 @@ import Foundation
 import HerdrKit
 
 /// In-app language override. `AppleLanguages` is read at process start, so a
-/// change here only takes effect after the user quits and reopens herdrm.
+/// change here only takes effect after the user quits and reopens fleecr.
 enum AppLanguage: String, CaseIterable, Identifiable {
     case system
     case english = "en"

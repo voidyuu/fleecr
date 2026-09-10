@@ -87,10 +87,10 @@ final class AgentTitleTests: XCTestCase {
               "agent_status": "done", "workspace_id": "w3", "tab_id": "w3:tH",
               "pane_id": "w3:pH", "focused": false, "revision": 2,
               "cwd": "/Users/jackie_m",
-              "terminal_title_stripped": "OC | herdrm 无法拖动图片到对话框"
+              "terminal_title_stripped": "OC | fleecr 无法拖动图片到对话框"
             }
             """)
-        XCTAssertEqual(agent.title, "OC | herdrm 无法拖动图片到对话框")
+        XCTAssertEqual(agent.title, "OC | fleecr 无法拖动图片到对话框")
     }
 
     func testKindMatchingOscTitleIsGeneric() {
@@ -179,13 +179,13 @@ final class AgentTitleTests: XCTestCase {
     }
 
     func testRenameSeedStripsComposedIndexAndAgentKind() {
-        // herdr 0.9 composes "2 · pi › π - herdrm" for tabs nobody renamed;
+        // herdr 0.9 composes "2 · pi › π - fleecr" for tabs nobody renamed;
         // the name a rename edits is just the trailing title.
         let tab = TabInfo(
-            tabID: "w2S:tX", workspaceID: "w2S", number: 29, label: "2 · pi › π - herdrm",
+            tabID: "w2S:tX", workspaceID: "w2S", number: 29, label: "2 · pi › π - fleecr",
             focused: true, paneCount: 1, agentStatusRaw: "idle"
         )
-        XCTAssertEqual(tab.renameSeed(agentKind: "pi"), "π - herdrm")
+        XCTAssertEqual(tab.renameSeed(agentKind: "pi"), "π - fleecr")
     }
 
     func testRenameSeedStripsComposedIndexForBareTerminal() {

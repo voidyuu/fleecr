@@ -65,7 +65,7 @@ final class ShortcutDispatcher {
             // falls through to the default "Close" command so the focused
             // window (Settings) closes instead of a pane in a window you can't
             // even see.
-            let mainWindowID = NSUserInterfaceItemIdentifier("herdrm.main")
+            let mainWindowID = NSUserInterfaceItemIdentifier("fleecr.main")
             if NSApp.keyWindow?.identifier == mainWindowID {
                 model.closeCurrentPane()
                 return true

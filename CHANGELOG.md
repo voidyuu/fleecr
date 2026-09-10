@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to herdrm are documented in this file. The format is based
+All notable changes to fleecr are documented in this file. The format is based
 on [Keep a Changelog](https://keepachangelog.com); versions follow semver.
 Release automation extracts the matching section for GitHub release notes and
 the Sparkle update description — a release without a section here fails CI.
@@ -18,7 +18,7 @@ the Sparkle update description — a release without a section here fails CI.
 - Naming now belongs to the backend: space and tab names shown in the sidebar
   are exactly the labels herdr reports, and every rename writes through
   herdr's own `workspace.rename` / `tab.rename` RPCs — the same ones the herdr
-  TUI uses — so herdrm, the herdr TUI, and `herdr api snapshot` always agree.
+  TUI uses — so fleecr, the herdr TUI, and `herdr api snapshot` always agree.
   Renames made in the herdr TUI show up here automatically, and vice versa.
 - The app no longer auto-renames spaces to follow the first terminal's
   directory. herdr names a space itself when it is created; only an explicit
@@ -156,7 +156,7 @@ the Sparkle update description — a release without a section here fails CI.
 
 ### Added
 - The device filter (bottom-left switcher) is remembered across launches:
-  reopening herdrm restores the device you had selected instead of always
+  reopening fleecr restores the device you had selected instead of always
   starting on All Devices. Removing that device falls back to All Devices.
 
 ## [0.4.3] - 2026-08-23
@@ -185,7 +185,7 @@ the Sparkle update description — a release without a section here fails CI.
   started (click-to-select still worked). Space rows now use an AppKit drag
   session after a few points of movement.
 - New Agent (and local `herdr` lookup) no longer trust the Finder-launched
-  app's sparse PATH. herdrm captures the login + interactive shell environment
+  app's sparse PATH. fleecr captures the login + interactive shell environment
   once in the background (`zsh -i -l`, then `-l` if the interactive rc hangs),
   via `env -0` into a private tempfile so rc banners cannot pollute the
   snapshot. Lookup walks that PATH, then the GUI PATH, then well-known
@@ -210,12 +210,12 @@ the Sparkle update description — a release without a section here fails CI.
   close from the context menu, with ⌘W, or by exiting the shell.
 - Spaces in the sidebar can be drag-reordered. The drop calls herdr's
   `workspace.move_block` (same RPC the TUI uses) so the order is the
-  session's, not a herdrm-only list; worktree groups move as a block.
+  session's, not a fleecr-only list; worktree groups move as a block.
   Cross-device drops are ignored. (#38, #39, thanks @kkunkunya!)
 
 ### Fixed
 - Nerd Font icons in agent TUIs (pi's powerfooter, powerline prompts) no
-  longer render as tofu boxes: herdrm now bundles the Nerd Fonts symbols font
+  longer render as tofu boxes: fleecr now bundles the Nerd Fonts symbols font
   (MIT) and resolves icon glyphs through it for every terminal font, without
   touching emoji or CJK fallback. (#34)
 
@@ -250,7 +250,7 @@ the Sparkle update description — a release without a section here fails CI.
   letting it walk out of view; typing a new query or reopening the sheet
   returns to the top. (#30, thanks @alejodelosrios!)
 - The New Agent picker now finds CLIs installed by NVM (and Grok's user-level
-  installer) when herdrm starts outside a login shell, locally or over SSH —
+  installer) when fleecr starts outside a login shell, locally or over SSH —
   agents like `pi` installed via npm under NVM show up in the picker. (#31,
   #32, thanks @JackieJam!)
 - Actions fired while a device is disconnected no longer fail with the bare
@@ -266,7 +266,7 @@ the Sparkle update description — a release without a section here fails CI.
   thanks @Yuxin-Qiao!)
 - Paste files and images straight into a Claude Code or Copilot pane. On a
   remote device the file is streamed over SSH into a private cache under
-  `~/.cache/herdrm/attachments` (0700, entries dropped after seven days) and
+  `~/.cache/fleecr/attachments` (0700, entries dropped after seven days) and
   its remote path is pasted into the agent; on a local device the paste is
   forwarded as Ctrl+V so the agent reads the clipboard itself. Uploads are
   capped at 50 MB and show an indicator while they run. (#25, thanks
@@ -322,7 +322,7 @@ the Sparkle update description — a release without a section here fails CI.
 ### Fixed
 - Connecting to a remote whose herdr isn't running used to fail with
   `malformed response: empty reply` — the tunnel comes up fine and ssh only
-  reports the forwarding failure after a client uses the socket. herdrm now
+  reports the forwarding failure after a client uses the socket. fleecr now
   diagnoses this in two steps: a remote probe that turns the common case into
   "herdr isn't running on <host> — start it by running \"herdr\" on that
   machine" (and tells a stale socket or sshd's AllowStreamLocalForwarding
@@ -349,7 +349,7 @@ the Sparkle update description — a release without a section here fails CI.
 ## [0.3.1] - 2026-08-20
 
 ### Added
-- herdrm now starts the local herdr server itself when nothing is listening on
+- fleecr now starts the local herdr server itself when nothing is listening on
   the socket, instead of asking you to go run `herdr` in a terminal. (#8,
   thanks @FacuVCanale!)
 - Shift+Enter in the agent terminal inserts a line break instead of submitting
@@ -358,7 +358,7 @@ the Sparkle update description — a release without a section here fails CI.
   modifier). (#14, thanks @ccyisafool!)
 - File menu commands with keyboard shortcuts: **New Agent** (⌘N) and **New
   Space** (⇧⌘N), reachable while the focus is inside an agent's terminal.
-  ⌘N replaces *New Window* — herdrm is a single-window console, so a second
+  ⌘N replaces *New Window* — fleecr is a single-window console, so a second
   window would only duplicate the device tree. (#10, thanks @alejodelosrios!)
 
 ### Fixed
@@ -371,7 +371,7 @@ the Sparkle update description — a release without a section here fails CI.
 
 ### Added
 - SSH password authentication as a fallback: when keys/agent/Tailscale SSH
-  can't authenticate, herdrm prompts in-app and stores the password in the
+  can't authenticate, fleecr prompts in-app and stores the password in the
   macOS login Keychain — never in files or process arguments. (#3, thanks
   @ljxw88!)
 - SSH failures now surface OpenSSH's actual error text instead of a bare
@@ -383,7 +383,7 @@ the Sparkle update description — a release without a section here fails CI.
 
 ### Fixed
 - Starting an agent right after creating its pane no longer fails with
-  `agent_pane_busy` while the shell is still initializing — herdrm now waits
+  `agent_pane_busy` while the shell is still initializing — fleecr now waits
   like the herdr CLI does. (#3)
 
 ## [0.2.3] - 2026-08-19

@@ -117,7 +117,7 @@ final class DeviceStoreTests: XCTestCase {
 
     func testDeviceStoreSaveAndLoad() throws {
         let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("herdrm-test-\(UUID().uuidString)")
+            .appendingPathComponent("fleecr-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         let store = DeviceStore(directory: tempDir)
@@ -154,7 +154,7 @@ final class DeviceStoreTests: XCTestCase {
 
     func testDeviceStoreLegacyMigration() throws {
         let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("herdrm-test-mig-\(UUID().uuidString)")
+            .appendingPathComponent("fleecr-test-mig-\(UUID().uuidString)")
         let legacyDir = tempDir.appendingPathComponent("legacy")
         try FileManager.default.createDirectory(at: legacyDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }

@@ -120,7 +120,7 @@ public struct LocalHerdrServer: Sendable {
     ///
     /// The process is deliberately **not** owned: nothing here terminates it, and there is no
     /// counterpart to `SSHTunnel.tearDown()`. herdr's server is a shared daemon holding every
-    /// agent's PTY, so killing it when herdrm quits would take the user's running agents down
+    /// agent's PTY, so killing it when fleecr quits would take the user's running agents down
     /// with it. It is meant to outlive us (launchd reparents it) and a second `herdr server`
     /// is a harmless no-op, so leaving it running is the correct end state.
     ///
@@ -128,10 +128,10 @@ public struct LocalHerdrServer: Sendable {
     /// the buffer fills, and closing our end of it would break the daemon's stdout — while a
     /// file still carries the real error text when the start fails.
     public static func spawn(binary: String, environment: [String: String]? = nil) throws -> Launched {
-        // Unique per spawn: a fixed name would let a second herdrm (or a second start)
+        // Unique per spawn: a fixed name would let a second fleecr (or a second start)
         // truncate a log file the live daemon still holds open at a non-zero offset.
         let logURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("herdrm-herdr-server-\(getpid())-\(UUID().uuidString.prefix(8)).log")
+            .appendingPathComponent("fleecr-herdr-server-\(getpid())-\(UUID().uuidString.prefix(8)).log")
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
         guard let log = try? FileHandle(forWritingTo: logURL) else {
             throw HerdrError.connectionFailed("could not open \(logURL.path)")
@@ -166,7 +166,7 @@ public struct LocalHerdrServer: Sendable {
     ///
     /// herdr picks the shell of every pane from `$SHELL`, and launchd does not export it: a GUI
     /// app started from Finder has no `SHELL` in its environment (`launchctl getenv SHELL` is
-    /// empty), so a server spawned from herdrm would give the user `sh` panes instead of their
+    /// empty), so a server spawned from fleecr would give the user `sh` panes instead of their
     /// login shell — no `.zshrc`, and none of the agents installed under `~/.local/bin` (claude
     /// among them) on PATH. Spawn already overlays the login-shell snapshot (PATH, NVM_DIR,
     /// …) so shims resolve; `SHELL` still has to be right so the pane itself is that shell.
@@ -175,9 +175,9 @@ public struct LocalHerdrServer: Sendable {
     /// deliberate choice. When the login shell cannot be resolved, nothing is set and herdr
     /// keeps whatever default it has.
     /// Process identity of the GUI app, which must not reach the daemon: the server outlives
-    /// herdrm and every pane inherits its environment, so `__CFBundleIdentifier` would make a
-    /// pane's `defaults`/NSUserDefaults hit herdrm's domain and TCC prompts get attributed to
-    /// the app (revoking herdrm's permissions would then break agents). `DYLD_*` and friends
+    /// fleecr and every pane inherits its environment, so `__CFBundleIdentifier` would make a
+    /// pane's `defaults`/NSUserDefaults hit fleecr's domain and TCC prompts get attributed to
+    /// the app (revoking fleecr's permissions would then break agents). `DYLD_*` and friends
     /// come from an Xcode debug launch and would be baked into a daemon outliving Xcode.
     /// Everything else the user's environment carries is wanted and stays.
     private static let strippedEnvironmentKeys: Set<String> = [

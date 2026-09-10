@@ -43,7 +43,7 @@ jobs:
 
       - name: Verify code signature
         run: |
-          APP="build/Build/Products/Release/fleecr.app"
+          APP="build/Build/Products/Release/Fleecr.app"
           codesign --verify --deep --strict "$APP"
 
       - name: Extract release notes from CHANGELOG
@@ -66,7 +66,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          APP="build/Build/Products/Release/fleecr.app"
+          APP="build/Build/Products/Release/Fleecr.app"
           ditto -c -k --keepParent "$APP" notarize.zip
           xcrun notarytool submit notarize.zip \
             --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \

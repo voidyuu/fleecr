@@ -253,14 +253,14 @@ public struct Device: Codable, Sendable, Identifiable, Equatable, Hashable {
 /// (`~/.local/state/herdr/client/endpoints.json`) and selection file
 /// (`~/.local/state/herdr/client/endpoint-selection.json`).
 public final class DeviceStore: @unchecked Sendable {
-    public static let didChangeNotification = Notification.Name("dev.bybee.herdrm.DeviceStoreDidChange")
+    public static let didChangeNotification = Notification.Name("dev.bybee.fleecr.DeviceStoreDidChange")
 
     public let directoryURL: URL
     public let endpointsURL: URL
     public let selectionURL: URL
     public let legacyFileURL: URL
 
-    private let queue = DispatchQueue(label: "dev.bybee.herdrm.devices")
+    private let queue = DispatchQueue(label: "dev.bybee.fleecr.devices")
     private var directorySource: DispatchSourceFileSystemObject?
     private var debounceTimer: DispatchSourceTimer?
     private var isSavingInternally = false

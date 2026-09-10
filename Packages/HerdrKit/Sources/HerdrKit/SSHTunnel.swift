@@ -109,7 +109,7 @@ public actor SSHTunnel {
 
         let remoteSock = try await remoteSocketPath()
         let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("herdrm-tunnels", isDirectory: true)
+            .appendingPathComponent("fleecr-tunnels", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         // Keep the path short: sockaddr_un caps at 104 bytes.
         let localSock = dir.appendingPathComponent("\(abs(target.hashValue ^ session.hashValue) % 100_000).sock").path
@@ -345,7 +345,7 @@ public actor SSHTunnel {
         }
         let command = """
         umask 077
-        dir="${XDG_CACHE_HOME:-$HOME/.cache}/herdrm/attachments"
+        dir="${XDG_CACHE_HOME:-$HOME/.cache}/fleecr/attachments"
         mkdir -p "$dir" && chmod 700 "$dir"
         find "$dir" -type f -mtime +7 -delete 2>/dev/null || true
         tmp="$dir/.\(remoteFilename).part"

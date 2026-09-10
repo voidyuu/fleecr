@@ -163,13 +163,13 @@ final class ShellEnvironmentTests: XCTestCase {
     func testCaptureRunsLoginAndInteractiveStartupFilesAndIgnoresStdoutBanners() throws {
         let bin = directory.appendingPathComponent("agent-bin", isDirectory: true)
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        try "export HERDRM_LOGIN_MARKER=from-zprofile\n"
+        try "export FLEECR_LOGIN_MARKER=from-zprofile\n"
             .write(to: directory.appendingPathComponent(".zprofile"), atomically: true, encoding: .utf8)
         try """
         echo 'WELCOME TO ZSH'
         print -P '%F{red}prompt%f'
-        export HERDRM_INTERACTIVE_MARKER=from-zshrc
-        export HERDRM_COMPLEX_VALUE='left=right
+        export FLEECR_INTERACTIVE_MARKER=from-zshrc
+        export FLEECR_COMPLEX_VALUE='left=right
         second line'
         export PATH="$HOME/agent-bin:$PATH"
         """.write(to: directory.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
@@ -181,20 +181,20 @@ final class ShellEnvironmentTests: XCTestCase {
             "TERM": "dumb",
         ])
 
-        XCTAssertEqual(snapshot["HERDRM_LOGIN_MARKER"], "from-zprofile")
-        XCTAssertEqual(snapshot["HERDRM_INTERACTIVE_MARKER"], "from-zshrc")
-        XCTAssertEqual(snapshot["HERDRM_COMPLEX_VALUE"], "left=right\nsecond line")
+        XCTAssertEqual(snapshot["FLEECR_LOGIN_MARKER"], "from-zprofile")
+        XCTAssertEqual(snapshot["FLEECR_INTERACTIVE_MARKER"], "from-zshrc")
+        XCTAssertEqual(snapshot["FLEECR_COMPLEX_VALUE"], "left=right\nsecond line")
         XCTAssertEqual(snapshot["PATH"]?.split(separator: ":").first, Substring(bin.path))
         XCTAssertFalse(snapshot["PATH"]?.contains("WELCOME") == true)
         XCTAssertNil(snapshot[ShellEnvironment.captureFileKey])
     }
 
     func testInteractiveHangFallsBackToLoginShell() throws {
-        try "export HERDRM_LOGIN_MARKER=from-zprofile\n"
+        try "export FLEECR_LOGIN_MARKER=from-zprofile\n"
             .write(to: directory.appendingPathComponent(".zprofile"), atomically: true, encoding: .utf8)
         try """
         sleep 30
-        export HERDRM_INTERACTIVE_MARKER=from-zshrc
+        export FLEECR_INTERACTIVE_MARKER=from-zshrc
         """.write(to: directory.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
 
         let snapshot = ShellEnvironment.capture(
@@ -208,8 +208,8 @@ final class ShellEnvironmentTests: XCTestCase {
             roundTimeout: 2
         )
 
-        XCTAssertEqual(snapshot["HERDRM_LOGIN_MARKER"], "from-zprofile")
-        XCTAssertNil(snapshot["HERDRM_INTERACTIVE_MARKER"], "killed -i must not leak a partial interactive rc")
+        XCTAssertEqual(snapshot["FLEECR_LOGIN_MARKER"], "from-zprofile")
+        XCTAssertNil(snapshot["FLEECR_INTERACTIVE_MARKER"], "killed -i must not leak a partial interactive rc")
         XCTAssertNotNil(snapshot["PATH"])
     }
 

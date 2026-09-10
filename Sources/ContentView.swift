@@ -72,7 +72,7 @@ struct RootView: View {
         .background(WindowAccessor { window in
             // Distinctive identifier so shortcut handling can tell the main
             // console window apart from e.g. the Settings window.
-            window?.identifier = NSUserInterfaceItemIdentifier("herdrm.main")
+            window?.identifier = NSUserInterfaceItemIdentifier("fleecr.main")
             window?.titlebarAppearsTransparent = true
             window?.styleMask.insert(.fullSizeContentView)
         })
@@ -512,7 +512,7 @@ struct SheetSectionLabel: View {
 /// One sheet for every rename: it edits the name herdr itself stores (the
 /// workspace or tab label), and the rename goes back through herdr's own
 /// `workspace.rename` / `tab.rename` — the same RPCs the herdr TUI uses — so
-/// herdrm, the herdr TUI, and `herdr api snapshot` all agree on the name.
+/// fleecr, the herdr TUI, and `herdr api snapshot` all agree on the name.
 @MainActor
 private func renameSpaceSheet(model: AppModel, entry: AppModel.SpaceEntry) -> some View {
     RenameItemSheet(

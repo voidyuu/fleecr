@@ -1,7 +1,7 @@
 # fleecr
 
 <p align="center">
-  <img src="Resources/AppIcon/herdrm-icon-1024.png" width="180" alt="fleecr logo" />
+  <img src="Resources/AppIcon/fleecr-icon-1024.png" width="180" alt="fleecr logo" />
 </p>
 
 <p align="center">

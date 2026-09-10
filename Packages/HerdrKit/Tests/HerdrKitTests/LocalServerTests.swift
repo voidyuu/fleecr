@@ -48,7 +48,7 @@ final class LocalServerTests: XCTestCase {
         let path = socketPath!
         try makeListener().start(at: path)
         let launches = Recorder()
-        // A poll interval far larger than a connect(): every connect herdrm makes goes through
+        // A poll interval far larger than a connect(): every connect fleecr makes goes through
         // here, so answering must cost one probe, not one poll.
         let server = LocalHerdrServer(
             binaryPath: { "/fake/herdr" },
@@ -138,7 +138,7 @@ final class LocalServerTests: XCTestCase {
         }
         let description = try XCTUnwrap((error as? HerdrError)?.errorDescription)
         XCTAssertTrue(description.contains("brew install herdr"), description)
-        XCTAssertTrue(description.contains("not found"), "the CLI may just be off herdrm's PATH: \(description)")
+        XCTAssertTrue(description.contains("not found"), "the CLI may just be off fleecr's PATH: \(description)")
         XCTAssertEqual(launches.values, [])
     }
 
@@ -195,7 +195,7 @@ final class LocalServerTests: XCTestCase {
         let started = Date()
         try await server.ensureRunning(socketPath: path, timeout: 5)
 
-        XCTAssertEqual(launches.values, [], "herdrm spawned a second server over a live one")
+        XCTAssertEqual(launches.values, [], "fleecr spawned a second server over a live one")
         XCTAssertLessThan(Date().timeIntervalSince(started), 1.5, "did not return as soon as it was served")
     }
 
@@ -226,17 +226,17 @@ final class LocalServerTests: XCTestCase {
     func testSpawnGivesTheServerAShellEvenWhenTheAppHasNone() async throws {
         let inherited = ProcessInfo.processInfo.environment["SHELL"]
         unsetenv("SHELL")
-        setenv("HERDRM_TEST_MARKER", "kept", 1)
+        setenv("FLEECR_TEST_MARKER", "kept", 1)
         defer {
             if let inherited { setenv("SHELL", inherited, 1) }
-            unsetenv("HERDRM_TEST_MARKER")
+            unsetenv("FLEECR_TEST_MARKER")
         }
 
         let script = directory.appendingPathComponent("fake-herdr-env")
         try """
         #!/bin/sh
         echo "shell: $(printenv SHELL)"
-        echo "marker: $(printenv HERDRM_TEST_MARKER)"
+        echo "marker: $(printenv FLEECR_TEST_MARKER)"
         """.write(to: script, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
 
@@ -272,8 +272,8 @@ final class LocalServerTests: XCTestCase {
 
     func testServerEnvironmentDropsTheAppsProcessIdentity() {
         let base = [
-            "__CFBundleIdentifier": "dev.bybee.herdrm",
-            "XPC_SERVICE_NAME": "application.dev.bybee.herdrm.1.2",
+            "__CFBundleIdentifier": "dev.bybee.fleecr",
+            "XPC_SERVICE_NAME": "application.dev.bybee.fleecr.1.2",
             "XPC_FLAGS": "0x0",
             "OSLogRateLimit": "1",
             "MallocNanoZone": "0",
@@ -319,7 +319,7 @@ final class LocalServerTests: XCTestCase {
     }
 
     func testServerEnvironmentPreservesTheRestOfTheEnvironment() {
-        let base = ["PATH": "/usr/bin:/bin", "HOME": "/Users/nobody", "HERDRM_MARKER": "keep-me"]
+        let base = ["PATH": "/usr/bin:/bin", "HOME": "/Users/nobody", "FLEECR_MARKER": "keep-me"]
 
         let environment = LocalHerdrServer.serverEnvironment(base: base)
 
@@ -368,7 +368,7 @@ final class LocalServerTests: XCTestCase {
             environment: ["PATH": "/usr/bin:/bin", "HOME": directory.path]
         )
 
-        XCTAssertEqual(binary, shim.path, "a mise-installed herdr is invisible to herdrm")
+        XCTAssertEqual(binary, shim.path, "a mise-installed herdr is invisible to fleecr")
     }
 
     // MARK: - Retry policy
@@ -447,7 +447,7 @@ final class LocalServerTests: XCTestCase {
         let error = await captureError { _ = try await service.connect() }
 
         XCTAssertNotNil(error, "the stopped server was silently restarted")
-        XCTAssertEqual(launches.values.count, 1, "herdrm revived a server the user stopped")
+        XCTAssertEqual(launches.values.count, 1, "fleecr revived a server the user stopped")
     }
 
     func testOnlyADeadServerTriggersAnAutoStart() {

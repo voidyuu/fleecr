@@ -3,12 +3,13 @@ import Foundation
 import Security
 
 public enum SSHCredentialStore {
-    public static let askPassModeEnvironmentKey = "HERDRM_SSH_ASKPASS"
-    public static let authorizationIDEnvironmentKey = "HERDRM_SSH_AUTHORIZATION_ID"
+    public static let askPassModeEnvironmentKey = "FLEECR_SSH_ASKPASS"
+    public static let authorizationIDEnvironmentKey = "FLEECR_SSH_AUTHORIZATION_ID"
     public static let persistenceDescription = "Saved in your macOS login Keychain"
 
-    private static let passwordService = "dev.bybee.herdrm.ssh-password"
-    private static let authorizationService = "dev.bybee.herdrm.ssh-authorization"
+    private static let passwordService = "dev.bybee.fleecr.ssh-password"
+    private static let legacyPasswordService = "dev.bybee.herdrm.ssh-password"
+    private static let authorizationService = "dev.bybee.fleecr.ssh-authorization"
 
     public static func password(for deviceID: UUID) throws -> String? {
         if let password = try keychainPassword(for: deviceID) { return password }
@@ -87,11 +88,23 @@ public enum SSHCredentialStore {
     }
 
     private static func keychainPassword(for deviceID: UUID) throws -> String? {
-        guard let data = try keychainData(
+        if let data = try keychainData(
             service: passwordService,
             account: deviceID.uuidString
-        ) else { return nil }
-        return try decodePassword(data)
+        ) {
+            return try decodePassword(data)
+        }
+        if let legacyData = try keychainData(
+            service: legacyPasswordService,
+            account: deviceID.uuidString
+        ) {
+            let password = try decodePassword(legacyData)
+            try setKeychainPassword(password, for: deviceID)
+            let legacyQuery = keychainQuery(service: legacyPasswordService, account: deviceID.uuidString)
+            SecItemDelete(legacyQuery as CFDictionary)
+            return password
+        }
+        return nil
     }
 
     private static func setKeychainPassword(_ password: String, for deviceID: UUID) throws {
@@ -115,6 +128,9 @@ public enum SSHCredentialStore {
     }
 
     private static func removeKeychainPassword(for deviceID: UUID) throws {
+        _ = SecItemDelete(
+            keychainQuery(service: legacyPasswordService, account: deviceID.uuidString) as CFDictionary
+        )
         let status = SecItemDelete(
             keychainQuery(service: passwordService, account: deviceID.uuidString) as CFDictionary
         )

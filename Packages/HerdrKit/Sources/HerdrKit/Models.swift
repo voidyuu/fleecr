@@ -222,7 +222,7 @@ public struct TabInfo: Codable, Sendable, Identifiable, Equatable {
 
     /// The name a rename sheet should edit: herdr's stored label minus the
     /// display index and agent kind herdr composes into tabs nobody renamed
-    /// ("2 · pi › π - herdrm" → "π - herdrm", "4 · eeg" → "eeg"). nil when
+    /// ("2 · pi › π - fleecr" → "π - fleecr", "4 · eeg" → "eeg"). nil when
     /// herdr has no stored name for this tab. Renaming writes the result back
     /// as the whole label (`tab.rename`), exactly like the herdr TUI does.
     public func renameSeed(agentKind: String?) -> String? {
@@ -392,7 +392,7 @@ public enum HerdrError: Error, LocalizedError, Sendable {
         switch self {
         case .socketUnavailable(let path): return "herdr socket not found at \(path)"
         case .connectionFailed(let reason): return "connection failed: \(reason)"
-        case .herdrNotInstalled: return "herdr not found on herdrm's PATH — install it with \"brew install herdr\""
+        case .herdrNotInstalled: return "herdr not found on fleecr's PATH — install it with \"brew install herdr\""
         case .remoteHerdrDown(let target, let socketPath):
             return "herdr isn't running on \(target) — nothing listens at \(socketPath); start it by running \"herdr\" on that machine"
         case .rpc(let code, let message): return "herdr error \(code): \(message)"

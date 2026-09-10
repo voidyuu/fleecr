@@ -123,7 +123,7 @@ final class LocalSocketTests: XCTestCase {
             return kinds
         }
         try await Task.sleep(nanoseconds: 300_000_000)
-        let paneID = try await service.createTab(workspaceID: nil, cwd: nil, label: "herdrm-test")
+        let paneID = try await service.createTab(workspaceID: nil, cwd: nil, label: "fleecr-test")
         try await Task.sleep(nanoseconds: 300_000_000)
         try await service.closePane(paneID: paneID)
 
@@ -136,8 +136,8 @@ final class LocalSocketTests: XCTestCase {
         let service = HerdrService(device: .local, autoStartLocalServer: false)
         _ = try await service.connect()
         let cwd = NSTemporaryDirectory()
-        let first = try await service.createWorkspace(label: "herdrm-reorder-a", cwd: cwd)
-        let second = try await service.createWorkspace(label: "herdrm-reorder-b", cwd: cwd)
+        let first = try await service.createWorkspace(label: "fleecr-reorder-a", cwd: cwd)
+        let second = try await service.createWorkspace(label: "fleecr-reorder-b", cwd: cwd)
         do {
             try await service.moveWorkspaceBlock(
                 workspaceIDs: [second.workspaceID],

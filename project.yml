@@ -30,8 +30,8 @@ targets:
     info:
       path: Sources/Info.plist
       properties:
-        CFBundleName: fleecr
-        CFBundleDisplayName: fleecr
+        CFBundleName: Fleecr
+        CFBundleDisplayName: Fleecr
         CFBundleIconName: AppIcon
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
@@ -46,7 +46,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.bybee.fleecr
-        PRODUCT_NAME: fleecr
+        PRODUCT_NAME: Fleecr
+        PRODUCT_MODULE_NAME: fleecr
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5.10"
         MARKETING_VERSION: "0.1.0"
@@ -78,3 +79,5 @@ targets:
       base:
         SWIFT_VERSION: "5.10"
         GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Fleecr.app/Contents/MacOS/Fleecr"
+        BUNDLE_LOADER: "$(TEST_HOST)"

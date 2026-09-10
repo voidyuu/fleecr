@@ -56,7 +56,7 @@ final class SSHAuthenticationTests: XCTestCase {
         let deviceID = UUID()
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "dev.bybee.herdrm.ssh-password",
+            kSecAttrService as String: "dev.bybee.fleecr.ssh-password",
             kSecAttrAccount as String: deviceID.uuidString,
         ]
         defer {
@@ -172,7 +172,7 @@ final class AttachBinarySelectionTests: XCTestCase {
 final class SSHFileTransferTests: XCTestCase {
     func testUploadStreamsFileAndReturnsRemotePath() async throws {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("herdrm-upload-test-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("fleecr-upload-test-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -187,7 +187,7 @@ final class SSHFileTransferTests: XCTestCase {
         #!/bin/sh
         printf '%s\\n' "$@" > \(HerdrService.shellQuoted(argumentsURL.path))
         cat > \(HerdrService.shellQuoted(capturedURL.path))
-        printf '/home/test/.cache/herdrm/attachments/test.png\\n'
+        printf '/home/test/.cache/fleecr/attachments/test.png\\n'
         """
         try script.write(to: executableURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executableURL.path)
@@ -200,7 +200,7 @@ final class SSHFileTransferTests: XCTestCase {
             executableURL: executableURL
         )
 
-        XCTAssertEqual(remotePath, "/home/test/.cache/herdrm/attachments/test.png")
+        XCTAssertEqual(remotePath, "/home/test/.cache/fleecr/attachments/test.png")
         XCTAssertEqual(try Data(contentsOf: capturedURL), payload)
         let arguments = try String(contentsOf: argumentsURL, encoding: .utf8)
         XCTAssertTrue(arguments.contains("ssh://test@example.invalid:2222"))
@@ -247,7 +247,7 @@ final class SSHFileTransferTests: XCTestCase {
 
     func testUploadRejectsOversizedAndIrregularFiles() throws {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("herdrm-upload-guard-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("fleecr-upload-guard-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 

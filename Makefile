@@ -10,7 +10,7 @@ build: gen
 	xcodebuild -quiet -project fleecr.xcodeproj -scheme fleecr -configuration Debug -derivedDataPath build build -skipPackagePluginValidation CODE_SIGN_IDENTITY=$(CODE_SIGN_IDENTITY) CODE_SIGNING_REQUIRED=$(CODE_SIGNING_REQUIRED)
 
 run: build
-	open build/Build/Products/Debug/fleecr.app
+	open build/Build/Products/Debug/Fleecr.app
 
 kit-test:
 	cd Packages/HerdrKit && swift test

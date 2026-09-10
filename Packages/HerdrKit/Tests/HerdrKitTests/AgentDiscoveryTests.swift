@@ -5,7 +5,7 @@ import XCTest
 final class AgentDiscoveryTests: XCTestCase {
     func testRemotePathExportFindsNVMAndGrokBinaries() throws {
         let home = FileManager.default.temporaryDirectory
-            .appendingPathComponent("herdrm-discovery-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("fleecr-discovery-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
 
         let nvmBin = home.appendingPathComponent(".nvm/versions/node/v22.14.0/bin", isDirectory: true)

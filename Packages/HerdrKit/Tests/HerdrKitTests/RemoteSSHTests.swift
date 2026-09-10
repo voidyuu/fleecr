@@ -2,21 +2,21 @@ import XCTest
 @testable import HerdrKit
 
 /// E2E tests against a real remote herdr over SSH.
-/// Enabled by HERDRM_E2E_SSH_TARGET (e.g. "vincent@10.10.10.87"); skipped otherwise.
+/// Enabled by FLEECR_E2E_SSH_TARGET (e.g. "vincent@10.10.10.87"); skipped otherwise.
 final class RemoteSSHTests: XCTestCase {
     private var target: String? {
-        ProcessInfo.processInfo.environment["HERDRM_E2E_SSH_TARGET"]
+        ProcessInfo.processInfo.environment["FLEECR_E2E_SSH_TARGET"]
     }
 
     func testProbeRemoteHome() async throws {
-        guard let target else { throw XCTSkip("HERDRM_E2E_SSH_TARGET not set") }
+        guard let target else { throw XCTSkip("FLEECR_E2E_SSH_TARGET not set") }
         let tunnel = SSHTunnel(target: target)
         let home = try await tunnel.probeRemoteHome()
         XCTAssertTrue(home.hasPrefix("/"), "unexpected remote home: \(home)")
     }
 
     func testTunnelPingSnapshotAndAgents() async throws {
-        guard let target else { throw XCTSkip("HERDRM_E2E_SSH_TARGET not set") }
+        guard let target else { throw XCTSkip("FLEECR_E2E_SSH_TARGET not set") }
         let device = Device(name: "e2e-remote", kind: .ssh(target: target))
         let service = HerdrService(device: device)
         let pong = try await service.connect()
@@ -28,7 +28,7 @@ final class RemoteSSHTests: XCTestCase {
         XCTAssertFalse(snapshot.workspaces.isEmpty, "remote session has no workspaces")
 
         // Round-trip a mutation: create a tab remotely, verify it in the snapshot, close it.
-        let paneID = try await service.createTab(workspaceID: nil, cwd: nil, label: "herdrm-e2e")
+        let paneID = try await service.createTab(workspaceID: nil, cwd: nil, label: "fleecr-e2e")
         let after = try await service.snapshot()
         XCTAssertNotEqual(snapshot.agents.count + snapshot.workspaces.count, 0)
         XCTAssertTrue(
@@ -44,7 +44,7 @@ final class RemoteSSHTests: XCTestCase {
     }
 
     func testTunnelSurvivesRepeatedRequests() async throws {
-        guard let target else { throw XCTSkip("HERDRM_E2E_SSH_TARGET not set") }
+        guard let target else { throw XCTSkip("FLEECR_E2E_SSH_TARGET not set") }
         let device = Device(name: "e2e-remote", kind: .ssh(target: target))
         let service = HerdrService(device: device)
         _ = try await service.connect()
@@ -55,10 +55,10 @@ final class RemoteSSHTests: XCTestCase {
     }
 
     func testUploadFileRoundTrip() async throws {
-        guard let target else { throw XCTSkip("HERDRM_E2E_SSH_TARGET not set") }
+        guard let target else { throw XCTSkip("FLEECR_E2E_SSH_TARGET not set") }
         let localURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("herdrm-e2e-\(UUID().uuidString).txt")
-        let payload = "herdrm remote upload \(UUID().uuidString)"
+            .appendingPathComponent("fleecr-e2e-\(UUID().uuidString).txt")
+        let payload = "fleecr remote upload \(UUID().uuidString)"
         try Data(payload.utf8).write(to: localURL)
         defer { try? FileManager.default.removeItem(at: localURL) }
 
@@ -78,10 +78,10 @@ final class RemoteSSHTests: XCTestCase {
 
     func testForwardedSocketStartsAgentInNewPane() async throws {
         let environment = ProcessInfo.processInfo.environment
-        guard let socketPath = environment["HERDRM_E2E_SOCKET_PATH"] else {
-            throw XCTSkip("HERDRM_E2E_SOCKET_PATH not set")
+        guard let socketPath = environment["FLEECR_E2E_SOCKET_PATH"] else {
+            throw XCTSkip("FLEECR_E2E_SOCKET_PATH not set")
         }
-        let kind = environment["HERDRM_E2E_AGENT_KIND"] ?? "claude"
+        let kind = environment["FLEECR_E2E_AGENT_KIND"] ?? "claude"
         let device = Device(
             name: "e2e-forwarded",
             kind: .local,
@@ -92,9 +92,9 @@ final class RemoteSSHTests: XCTestCase {
 
         var paneID: String?
         do {
-            let pane = try await service.createTab(workspaceID: nil, cwd: nil, label: "herdrm-e2e")
+            let pane = try await service.createTab(workspaceID: nil, cwd: nil, label: "fleecr-e2e")
             paneID = pane
-            let name = "herdrm-e2e-\(UUID().uuidString.prefix(6).lowercased())"
+            let name = "fleecr-e2e-\(UUID().uuidString.prefix(6).lowercased())"
             try await service.startAgent(
                 name: name,
                 kind: kind,

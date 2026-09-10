@@ -4,7 +4,7 @@ import Foundation
 
 /// Login + interactive shell environment for a Finder-launched GUI process.
 ///
-/// LaunchServices gives herdrm `/usr/bin:/bin:/usr/sbin:/sbin`. The PATH that actually
+/// LaunchServices gives fleecr `/usr/bin:/bin:/usr/sbin:/sbin`. The PATH that actually
 /// has `codex`, `claude`, `node`, and fnm/nvm/mise shims lives in the user's shell
 /// startup files, which the desktop never executes. This type asks a real shell to
 /// run those files as code (not by grepping `export PATH=`), snapshots the exported
@@ -182,7 +182,7 @@ public struct ShellEnvironment: Sendable, Equatable {
 
     // MARK: - Capture
 
-    static let captureFileKey = "HERDRM_SHELL_ENV_CAPTURE_FILE"
+    static let captureFileKey = "FLEECR_SHELL_ENV_CAPTURE_FILE"
 
     static let injectedKeys: Set<String> = [
         captureFileKey,
@@ -269,7 +269,7 @@ public struct ShellEnvironment: Sendable, Equatable {
         let root = (tmpdir?.isEmpty == false ? tmpdir! : NSTemporaryDirectory())
         let directory = root.hasSuffix("/") ? root : root + "/"
         for _ in 0..<8 {
-            let path = "\(directory).herdrm-shell-env-\(getpid())-\(UUID().uuidString.prefix(8))"
+            let path = "\(directory).fleecr-shell-env-\(getpid())-\(UUID().uuidString.prefix(8))"
             let fd = open(path, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0o600)
             guard fd >= 0 else { continue }
             fchmod(fd, 0o600)
