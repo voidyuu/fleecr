@@ -7,7 +7,11 @@ the Sparkle update description — a release without a section here fails CI.
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-09-10
+## [0.6.1] - 2026-09-10
+
+### Changed
+- Switch release packaging to local Xcode toolchain to ensure complete AppIcon and asset catalog compilation.
+- Update release automation to local `make release` workflow and Homebrew tap integration.
 
 ### Changed
 - The ⌘N shortcut now creates a new space (previously ⌘⇧N).
