@@ -3,10 +3,16 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 0.6.0)"
+        required: false
+        default: "0.6.0"
 
 jobs:
   release:
-    runs-on: macos-26
+    runs-on: macos-14
     permissions:
       contents: write
     steps:
@@ -38,7 +44,10 @@ jobs:
         env:
           P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           xcodegen generate
           if [ -n "$P12_BASE64" ]; then
@@ -98,7 +107,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          TAG="${GITHUB_REF_NAME}"
+          if [ "$TAG" = "main" ] || [ -z "$TAG" ]; then
+            TAG="v$VERSION"
+          fi
+          gh release create "$TAG" \
             "fleecr-$VERSION.zip" \
             --title "fleecr $VERSION" --notes-file notes.md
 
