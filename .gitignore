@@ -1,0 +1,23 @@
+.DS_Store
+build/
+build-rel/
+build-ios/
+design/
+*.xcodeproj/
+Sources/Info.plist
+*.xcuserstate
+**/xcuserdata/
+**/.build/
+**/.swiftpm/
+
+# cua-driver screenshots
+.cua/
+
+# test coverage raw profiles
+*.profraw
+
+# release archives
+*.zip
+
+# agents
+.agents/

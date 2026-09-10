@@ -1,0 +1,81 @@
+name: fleecr
+options:
+  bundleIdPrefix: cc.cassiel
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  developmentRegion: en
+  knownRegions:
+    - en
+    - zh-Hans
+packages:
+  HerdrKit:
+    path: Packages/HerdrKit
+  GhosttyTerminal:
+    path: Packages/GhosttyTerminal
+targets:
+  fleecr:
+    type: application
+    platform: macOS
+    sources:
+      - Sources
+      - path: Resources
+        buildPhase: resources
+    dependencies:
+      - package: HerdrKit
+      - package: GhosttyTerminal
+        product: GhosttyTerminal
+      - package: GhosttyTerminal
+        product: GhosttyKit
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleName: Fleecr
+        CFBundleDisplayName: Fleecr
+        CFBundleIconName: AppIcon
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.developer-tools
+        LSMinimumSystemVersion: "$(MACOSX_DEPLOYMENT_TARGET)"
+        NSPrincipalClass: NSApplication
+        NSHumanReadableCopyright: "© 2026 voidyuu"
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations:
+          - en
+          - zh-Hans
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cc.cassiel.fleecr
+        PRODUCT_NAME: Fleecr
+        PRODUCT_MODULE_NAME: fleecr
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        SWIFT_VERSION: "5.10"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        COMBINE_HIDPI_IMAGES: YES
+        CODE_SIGN_STYLE: Manual
+        LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+          ONLY_ACTIVE_ARCH: YES
+        Release:
+          CODE_SIGN_IDENTITY: "-"
+          ONLY_ACTIVE_ARCH: NO
+          ARCHS: "arm64 x86_64"
+  fleecrTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests
+    dependencies:
+      - target: fleecr
+    settings:
+      base:
+        SWIFT_VERSION: "5.10"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Fleecr.app/Contents/MacOS/Fleecr"
+        BUNDLE_LOADER: "$(TEST_HOST)"
