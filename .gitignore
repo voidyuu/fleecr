@@ -16,8 +16,9 @@ Sources/Info.plist
 # test coverage raw profiles
 *.profraw
 
-# release archives
+# release archives & artifacts
 *.zip
+notes.md
 
 # agents
 .agents/
