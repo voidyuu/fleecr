@@ -3,9 +3,19 @@ import Foundation
 struct LightTerminalANSIAdapter {
     private var pending: [UInt8] = []
 
+    mutating func transform(_ data: Data) -> [UInt8] {
+        pending.append(contentsOf: data)
+        return processPending()
+    }
+
     mutating func transform(_ bytes: ArraySlice<UInt8>) -> [UInt8] {
         pending.append(contentsOf: bytes)
+        return processPending()
+    }
+
+    private mutating func processPending() -> [UInt8] {
         var output: [UInt8] = []
+        output.reserveCapacity(pending.count)
         var index = 0
 
         while index < pending.count {
@@ -27,7 +37,7 @@ struct LightTerminalANSIAdapter {
             }
             guard end < pending.count else { break }
 
-            let sequence = Array(pending[index...end])
+            let sequence = pending[index...end]
             if pending[end] == 0x6D {
                 // A Powerline separator is a foreground-colored shape painted
                 // over the next segment's background.  Its foreground is not
@@ -55,8 +65,10 @@ struct LightTerminalANSIAdapter {
             index = end + 1
         }
 
-        if index > 0 {
-            pending.removeFirst(index)
+        if index == pending.count {
+            pending.removeAll(keepingCapacity: true)
+        } else if index > 0 {
+            pending.removeSubrange(0..<index)
         }
         return output
     }
@@ -117,12 +129,25 @@ struct LightTerminalANSIAdapter {
         return (levels[value / 36], levels[(value / 6) % 6], levels[value % 6])
     }
 
-    private func sequenceContainsForegroundColor(_ sequence: [UInt8]) -> Bool {
+    private func sequenceContainsForegroundColor(_ sequence: ArraySlice<UInt8>) -> Bool {
         guard sequence.count >= 3 else { return false }
-        let parameters = sequence[2..<(sequence.count - 1)]
-        let values = String(decoding: parameters, as: UTF8.self)
-            .split(separator: ";", omittingEmptySubsequences: false)
-        return values.contains { $0 == "38" }
+        let start = sequence.startIndex + 2
+        let end = sequence.endIndex - 1
+        guard start < end else { return false }
+        let parameters = sequence[start..<end]
+
+        var tokenStart = parameters.startIndex
+        while tokenStart < parameters.endIndex {
+            var tokenEnd = tokenStart
+            while tokenEnd < parameters.endIndex && parameters[tokenEnd] != 0x3B {
+                tokenEnd += 1
+            }
+            if tokenEnd - tokenStart == 2 && parameters[tokenStart] == 0x33 && parameters[tokenStart + 1] == 0x38 {
+                return true
+            }
+            tokenStart = tokenEnd < parameters.endIndex ? tokenEnd + 1 : parameters.endIndex
+        }
+        return false
     }
 
     /// Looks past complete control sequences for the next UTF-8 scalar.
@@ -169,53 +194,128 @@ struct LightTerminalANSIAdapter {
         return nil
     }
 
+    private struct SGRToken {
+        let slice: ArraySlice<UInt8>
+        let intValue: Int?
+    }
+
+    private static func parseAsciiInt(_ slice: ArraySlice<UInt8>) -> Int? {
+        guard !slice.isEmpty else { return nil }
+        var result = 0
+        for b in slice {
+            guard b >= 0x30 && b <= 0x39 else { return nil }
+            result = result * 10 + Int(b - 0x30)
+            if result > 10_000 { return nil }
+        }
+        return result
+    }
+
+    private static func appendAsciiInt(_ buffer: inout [UInt8], _ value: Int) {
+        if value == 0 {
+            buffer.append(0x30)
+            return
+        }
+        var v = value
+        let start = buffer.count
+        while v > 0 {
+            buffer.append(UInt8(0x30 + (v % 10)))
+            v /= 10
+        }
+        buffer[start...].reverse()
+    }
+
     private func transformSGR(
-        _ sequence: [UInt8],
+        _ sequence: ArraySlice<UInt8>,
         preservePowerlineForeground: Bool = false
     ) -> [UInt8] {
-        guard sequence.count >= 3 else { return sequence }
-        let parameters = sequence[2..<(sequence.count - 1)]
-        let values = String(decoding: parameters, as: UTF8.self)
-            .split(separator: ";", omittingEmptySubsequences: false)
-            .map(String.init)
-        var output: [String] = []
-        var index = 0
+        guard sequence.count >= 3 else { return Array(sequence) }
+        let start = sequence.startIndex + 2
+        let end = sequence.endIndex - 1
+        guard start < end else { return Array(sequence) }
+        let parameters = sequence[start..<end]
 
-        while index < values.count {
-            let isColor = values[index] == "38" || values[index] == "48"
-            let isBackground = values[index] == "48"
-            if isColor, index + 4 < values.count, values[index + 1] == "2",
-               let red = Int(values[index + 2]),
-               let green = Int(values[index + 3]),
-               let blue = Int(values[index + 4]),
+        var tokens: [SGRToken] = []
+        var tokenStart = parameters.startIndex
+        while tokenStart <= parameters.endIndex {
+            var tokenEnd = tokenStart
+            while tokenEnd < parameters.endIndex && parameters[tokenEnd] != 0x3B {
+                tokenEnd += 1
+            }
+            let slice = parameters[tokenStart..<tokenEnd]
+            tokens.append(SGRToken(slice: slice, intValue: Self.parseAsciiInt(slice)))
+            if tokenEnd == parameters.endIndex { break }
+            tokenStart = tokenEnd + 1
+        }
+
+        var result: [UInt8] = []
+        result.reserveCapacity(sequence.count + 16)
+        result.append(0x1B)
+        result.append(0x5B)
+
+        var index = 0
+        var isFirst = true
+
+        func appendSeparatorIfNeeded() {
+            if isFirst {
+                isFirst = false
+            } else {
+                result.append(0x3B) // ';'
+            }
+        }
+
+        while index < tokens.count {
+            let token = tokens[index]
+            let isColor = token.intValue == 38 || token.intValue == 48
+            let isBackground = token.intValue == 48
+
+            if isColor, index + 4 < tokens.count,
+               tokens[index + 1].intValue == 2,
+               let red = tokens[index + 2].intValue,
+               let green = tokens[index + 3].intValue,
+               let blue = tokens[index + 4].intValue,
                (0...255).contains(red), (0...255).contains(green), (0...255).contains(blue) {
                 let light = preservePowerlineForeground && !isBackground
-                    // Separator foregrounds are neighboring backgrounds, so
-                    // use the background transform rather than the text
-                    // contrast transform. This also keeps dark prompts
-                    // internally consistent after their backgrounds flip.
                     ? Self.adapt(red: red, green: green, blue: blue, isBackground: true)
                     : Self.adapt(red: red, green: green, blue: blue, isBackground: isBackground)
-                output += [values[index], "2", String(light.red), String(light.green), String(light.blue)]
+                appendSeparatorIfNeeded()
+                result.append(contentsOf: token.slice)
+                result.append(0x3B)
+                result.append(0x32) // '2'
+                result.append(0x3B)
+                Self.appendAsciiInt(&result, light.red)
+                result.append(0x3B)
+                Self.appendAsciiInt(&result, light.green)
+                result.append(0x3B)
+                Self.appendAsciiInt(&result, light.blue)
                 index += 5
-            } else if isColor, index + 2 < values.count, values[index + 1] == "5",
-                      let paletteIndex = Int(values[index + 2]),
-                      // 0–15 resolve through the installed ANSI palette, which is
-                      // already themed; rewriting them here would flip them twice.
+            } else if isColor, index + 2 < tokens.count,
+                      tokens[index + 1].intValue == 5,
+                      let paletteIndex = tokens[index + 2].intValue,
                       (16...255).contains(paletteIndex) {
                 let base = Self.xterm256RGB(paletteIndex)
                 let light = preservePowerlineForeground && !isBackground
                     ? Self.adapt(red: base.red, green: base.green, blue: base.blue, isBackground: true)
                     : Self.adapt(red: base.red, green: base.green, blue: base.blue, isBackground: isBackground)
-                output += [values[index], "2", String(light.red), String(light.green), String(light.blue)]
+                appendSeparatorIfNeeded()
+                result.append(contentsOf: token.slice)
+                result.append(0x3B)
+                result.append(0x32) // '2'
+                result.append(0x3B)
+                Self.appendAsciiInt(&result, light.red)
+                result.append(0x3B)
+                Self.appendAsciiInt(&result, light.green)
+                result.append(0x3B)
+                Self.appendAsciiInt(&result, light.blue)
                 index += 3
             } else {
-                output.append(values[index])
+                appendSeparatorIfNeeded()
+                result.append(contentsOf: token.slice)
                 index += 1
             }
         }
 
-        return [0x1B, 0x5B] + Array(output.joined(separator: ";").utf8) + [0x6D]
+        result.append(0x6D) // 'm'
+        return result
     }
 
     private static func clamp(_ value: Double) -> Int {

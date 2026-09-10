@@ -21,7 +21,7 @@ struct SpaceRef: Hashable {
 }
 
 /// Live state for one device's herdr session.
-struct DeviceSessionState {
+struct DeviceSessionState: Equatable {
     var connection: ConnectionState = .idle
     var agents: [AgentInfo] = []
     var workspaces: [WorkspaceInfo] = []
@@ -262,10 +262,12 @@ final class AppModel: ObservableObject {
     /// Agents in the selected space, in herdr tab order so sidebar drag matches the TUI.
     var visibleAgents: [AgentEntry] {
         guard let space = selectedSpace, let device = device(space.deviceID) else { return [] }
-        return session(space.deviceID).agents
+        let currentSession = session(space.deviceID)
+        let tabRanks = Dictionary(uniqueKeysWithValues: currentSession.tabs.enumerated().map { ($1.tabID, $0) })
+        return currentSession.agents
             .filter { $0.workspaceID == space.workspaceID }
             .map { agentEntry(device: device, agent: $0) }
-            .sorted { tabRank(deviceID: space.deviceID, tabID: $0.agent.tabID) < tabRank(deviceID: space.deviceID, tabID: $1.agent.tabID) }
+            .sorted { (tabRanks[$0.agent.tabID] ?? Int.max) < (tabRanks[$1.agent.tabID] ?? Int.max) }
     }
 
     func terminalEntries(for device: Device) -> [TerminalEntry] {
@@ -284,8 +286,16 @@ final class AppModel: ObservableObject {
 
     var visibleTerminals: [TerminalEntry] {
         guard let space = selectedSpace, let device = device(space.deviceID) else { return [] }
-        return terminalEntries(for: device).filter {
-            $0.pane.workspaceID == space.workspaceID
+        let state = session(device.id)
+        let tabsByID = Dictionary(uniqueKeysWithValues: state.tabs.map { ($0.tabID, $0) })
+        return state.panes.compactMap { pane in
+            guard pane.workspaceID == space.workspaceID, let terminalID = pane.terminalID else { return nil }
+            return TerminalEntry(
+                device: device,
+                pane: pane,
+                tab: pane.tabID.flatMap { tabsByID[$0] },
+                terminalID: terminalID
+            )
         }
     }
 
@@ -527,7 +537,7 @@ final class AppModel: ObservableObject {
                     self.cwdPollTasks[device.id]?.cancel()
                     self.cwdPollTasks[device.id] = Task { @MainActor [weak self] in
                         while !Task.isCancelled {
-                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            try? await Task.sleep(nanoseconds: 3_000_000_000)
                             guard !Task.isCancelled else { return }
                             await self?.refresh(device.id)
                         }
@@ -745,12 +755,15 @@ final class AppModel: ObservableObject {
                 guard let cwd = snapshot.workspaceCWD(workspaceID: workspace.workspaceID) else { return nil }
                 return (workspace.workspaceID, cwd)
             })
-            unreadAgents = AgentUnread.applying(
+            let nextUnread = AgentUnread.applying(
                 previous: previousStatuses[deviceID] ?? [:],
                 agents: snapshot.agents,
                 unread: unreadAgents,
                 deviceID: device.id
             )
+            if unreadAgents != nextUnread {
+                unreadAgents = nextUnread
+            }
             notifyTransitions(
                 device: device,
                 from: previousStatuses[deviceID] ?? [:],
@@ -761,14 +774,32 @@ final class AppModel: ObservableObject {
             previousStatuses[deviceID] = Dictionary(
                 uniqueKeysWithValues: snapshot.agents.map { ($0.paneID, $0.status) }
             )
-            sessions[deviceID]?.agents = snapshot.agents
-            sessions[deviceID]?.workspaces = snapshot.workspaces
-            sessions[deviceID]?.tabs = Self.orderedTabs(
+            let nextTabs = Self.orderedTabs(
                 snapshot.tabs ?? [],
                 workspaces: snapshot.workspaces
             )
-            sessions[deviceID]?.panes = snapshot.ordinaryTerminalPanes
-            sessions[deviceID]?.workspaceCWDs = workspaceCWDs
+            if var current = sessions[deviceID] {
+                if current.agents != snapshot.agents ||
+                   current.workspaces != snapshot.workspaces ||
+                   current.tabs != nextTabs ||
+                   current.panes != snapshot.ordinaryTerminalPanes ||
+                   current.workspaceCWDs != workspaceCWDs {
+                    current.agents = snapshot.agents
+                    current.workspaces = snapshot.workspaces
+                    current.tabs = nextTabs
+                    current.panes = snapshot.ordinaryTerminalPanes
+                    current.workspaceCWDs = workspaceCWDs
+                    sessions[deviceID] = current
+                }
+            } else {
+                var newState = DeviceSessionState()
+                newState.agents = snapshot.agents
+                newState.workspaces = snapshot.workspaces
+                newState.tabs = nextTabs
+                newState.panes = snapshot.ordinaryTerminalPanes
+                newState.workspaceCWDs = workspaceCWDs
+                sessions[deviceID] = newState
+            }
             let paneIDs = Set((snapshot.panes ?? []).map(\.paneID))
                 .union(snapshot.agents.map(\.paneID))
             if let selected = selectedPane, selected.deviceID == deviceID,
@@ -924,7 +955,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Renames a space in the backend (`workspace.rename`); herdr is the sole
-    /// owner of space names, so herdrm never writes one on its own.
+    /// owner of space names, so fleecr never writes one on its own.
     func renameSpace(_ entry: SpaceEntry, label: String) {
         let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !label.isEmpty, label != entry.workspace.label else { return }

@@ -143,6 +143,39 @@ protocol LocalProcessTerminalViewDelegate: AnyObject {
 
 typealias LocalProcessTerminalView = LineBreakTerminalView
 
+final class TerminalOutputColorFilter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _usesLightColors = false
+    private var adapter = LightTerminalANSIAdapter()
+
+    var usesLightColors: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _usesLightColors
+        }
+        set {
+            lock.lock()
+            _usesLightColors = newValue
+            lock.unlock()
+        }
+    }
+
+    func reset() {
+        lock.lock()
+        adapter = LightTerminalANSIAdapter()
+        lock.unlock()
+    }
+
+    func transform(data: Data) -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        guard _usesLightColors else { return data }
+        let transformed = adapter.transform(data)
+        return transformed.isEmpty ? Data() : Data(transformed)
+    }
+}
+
 /// Ghostty-backed terminal view supporting line break on Shift+Return,
 /// Mac editing shortcuts, file/image paste, and local PTY process execution.
 final class LineBreakTerminalView: AppTerminalView {
@@ -150,9 +183,12 @@ final class LineBreakTerminalView: AppTerminalView {
     let terminalController: TerminalController
     var process: LocalPTYProcess?
 
-    var usesLightColors = false
+    private let colorFilter = TerminalOutputColorFilter()
+    var usesLightColors: Bool {
+        get { colorFilter.usesLightColors }
+        set { colorFilter.usesLightColors = newValue }
+    }
     var appliedDarkAppearance: Bool?
-    private var lightColorAdapter = LightTerminalANSIAdapter()
     var optionAsMetaKey = true
     var bracketedPasteMode = false
     var mouseReporting = TerminalDefaults.defaultMouseReporting
@@ -214,7 +250,7 @@ final class LineBreakTerminalView: AppTerminalView {
     }
 
     func resetLightColorAdapter() {
-        lightColorAdapter = LightTerminalANSIAdapter()
+        colorFilter.reset()
     }
 
     func startProcess(
@@ -224,17 +260,12 @@ final class LineBreakTerminalView: AppTerminalView {
         workingDirectory: String? = nil
     ) {
         let pty = LocalPTYProcess()
-        pty.onOutput = { [weak self] data in
-            Task { @MainActor in
-                guard let self else { return }
-                if self.usesLightColors {
-                    let transformed = self.lightColorAdapter.transform(Array(data)[...])
-                    if !transformed.isEmpty {
-                        self.inMemorySession.receive(Data(transformed))
-                    }
-                } else {
-                    self.inMemorySession.receive(data)
-                }
+        let filter = self.colorFilter
+        let session = self.inMemorySession
+        pty.onOutput = { data in
+            let outputData = filter.transform(data: data)
+            if !outputData.isEmpty {
+                session.receive(outputData)
             }
         }
         pty.onExit = { [weak self] exitCode in
@@ -757,6 +788,28 @@ struct AttachTerminalView: NSViewRepresentable {
     var onExit: ((Int32?) -> Void)? = nil
     var onViewReady: ((LocalProcessTerminalView) -> Void)? = nil
 
+    struct AppearanceKey: Equatable {
+        let fontName: String
+        let fontSize: Double
+        let thinStrokes: Bool
+        let fontWeight: Double
+        let lineSpacing: Double
+        let theme: AppTheme
+        let mouseReporting: Bool
+    }
+
+    private var currentAppearanceKey: AppearanceKey {
+        AppearanceKey(
+            fontName: fontName,
+            fontSize: fontSize,
+            thinStrokes: thinStrokes,
+            fontWeight: fontWeight,
+            lineSpacing: lineSpacing,
+            theme: theme,
+            mouseReporting: mouseReporting
+        )
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> LocalProcessTerminalView {
@@ -764,6 +817,7 @@ struct AttachTerminalView: NSViewRepresentable {
         configurePasteHandling(view)
         view.processDelegate = context.coordinator
         context.coordinator.onExit = onExit
+        context.coordinator.lastAppearanceKey = currentAppearanceKey
         configureAppearance(view)
 
         let service = HerdrService(device: device)
@@ -794,7 +848,11 @@ struct AttachTerminalView: NSViewRepresentable {
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
         configurePasteHandling(nsView)
         context.coordinator.onExit = onExit
-        configureAppearance(nsView)
+        let key = currentAppearanceKey
+        if context.coordinator.lastAppearanceKey != key {
+            context.coordinator.lastAppearanceKey = key
+            configureAppearance(nsView)
+        }
     }
 
     private func configurePasteHandling(_ view: LineBreakTerminalView) {
@@ -826,6 +884,7 @@ struct AttachTerminalView: NSViewRepresentable {
     final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
         nonisolated(unsafe) var authorizationID: UUID?
         var onExit: ((Int32?) -> Void)?
+        var lastAppearanceKey: AppearanceKey?
 
         deinit {
             discardAuthorization()

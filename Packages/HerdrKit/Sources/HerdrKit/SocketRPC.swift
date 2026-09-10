@@ -12,23 +12,62 @@ public struct SocketRPC: Sendable {
 
     // MARK: - Requests
 
-    public func request(method: String, params: JSONValue? = .object([:])) async throws -> JSONValue {
+    private struct RPCResponseEnvelope<T: Decodable>: Decodable {
+        let result: T?
+        let error: RPCErrorPayload?
+    }
+
+    private struct RPCErrorEnvelope: Decodable {
+        let error: RPCErrorPayload?
+    }
+
+    private struct RPCErrorPayload: Decodable {
+        let code: String?
+        let message: String?
+    }
+
+    private func requestLine(method: String, params: JSONValue? = .object([:])) async throws -> Data {
         let path = socketPath
         return try await Task.detached(priority: .userInitiated) {
             let fd = try Self.connect(path: path)
             defer { close(fd) }
             try Self.writeLine(fd: fd, data: Self.encodeRequest(id: UUID().uuidString, method: method, params: params))
-            let line = try Self.readLine(fd: fd, timeoutSeconds: 15)
-            return try Self.decodeResponse(line)
+            guard let line = try Self.readLine(fd: fd, timeoutSeconds: 15) else {
+                throw HerdrError.malformedResponse("empty reply")
+            }
+            return line
         }.value
     }
 
+    public func request(method: String, params: JSONValue? = .object([:])) async throws -> JSONValue {
+        let line = try await requestLine(method: method, params: params)
+        return try Self.decodeResponse(line)
+    }
+
     public func request<T: Decodable>(method: String, params: JSONValue? = .object([:]), as type: T.Type) async throws -> T {
-        let result = try await request(method: method, params: params)
-        let data = try JSONEncoder().encode(result)
+        let line = try await requestLine(method: method, params: params)
+        guard !line.isEmpty else { throw HerdrError.malformedResponse("empty reply") }
+
         do {
-            return try JSONDecoder().decode(T.self, from: data)
+            let envelope = try JSONDecoder().decode(RPCResponseEnvelope<T>.self, from: line)
+            if let error = envelope.error {
+                let code = error.code ?? "unknown"
+                let message = error.message ?? "unknown error"
+                throw HerdrError.rpc(code: code, message: message)
+            }
+            guard let result = envelope.result else {
+                throw HerdrError.malformedResponse("reply has neither result nor error")
+            }
+            return result
+        } catch let herdrError as HerdrError {
+            throw herdrError
         } catch {
+            if let errorEnvelope = try? JSONDecoder().decode(RPCErrorEnvelope.self, from: line),
+               let error = errorEnvelope.error {
+                let code = error.code ?? "unknown"
+                let message = error.message ?? "unknown error"
+                throw HerdrError.rpc(code: code, message: message)
+            }
             throw HerdrError.malformedResponse("\(method): \(error)")
         }
     }
