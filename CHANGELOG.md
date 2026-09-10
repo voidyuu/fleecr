@@ -7,7 +7,7 @@ a release without a section here fails CI.
 
 ## [Unreleased]
 
-## [1.0] - 2026-09-10
+## [1.0.0] - 2026-09-10
 
 ### Added
 - Initial release of Fleecr.
