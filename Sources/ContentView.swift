@@ -121,10 +121,21 @@ struct DetailView: View {
     // here; SidebarView reads the same value to filter its rows in place.
     @Binding var query: String
     @State private var searchFieldFocused = false
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var themeStore = ThemeStore.shared
 
+    private var activeTerminalTheme: AppTheme {
+        let isDark: Bool
+        switch themeStore.appearance {
+        case .system: isDark = colorScheme == .dark
+        case .light: isDark = false
+        case .dark: isDark = true
+        }
+        return isDark ? themeStore.darkTheme : themeStore.lightTheme
+    }
+
     private var terminalBackground: Color {
-        Color(hex: themeStore.activeTheme.background)
+        Color(hex: activeTerminalTheme.background)
     }
 
     var body: some View {
@@ -215,7 +226,7 @@ struct DetailView: View {
                     thinStrokes: terminalThinStrokes,
                     fontWeight: terminalFontWeight,
                     lineSpacing: terminalLineSpacing,
-                    theme: themeStore.activeTheme,
+                    theme: activeTerminalTheme,
                     mouseReporting: terminalMouseReporting,
                     onAttachmentError: { model.actionError = $0 },
                     onAttachmentUploadingChanged: { uploadingAttachment = $0 },
