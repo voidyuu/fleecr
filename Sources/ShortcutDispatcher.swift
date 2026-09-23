@@ -30,6 +30,7 @@ final class ShortcutDispatcher {
                 }
             }
 
+            // Handle app bindings before the focused terminal receives keyDown.
             guard let actionID = ShortcutStore.shared.actionItemID(for: event) else {
                 return event
             }

@@ -140,13 +140,35 @@ struct NativeToolbarBridge: NSViewRepresentable {
             parent.model.createNewSpace(on: device)
         }
         private func submitSearch() {
-            // Enter commits: clears the field and drops focus (the filter releases
-            // back to the full list). Not reached while an IME is composing — the
-            // return guard swallows that Return so it commits text instead.
+            // Enter commits: clears the field, releases the filter, then returns
+            // focus to the terminal. IME composition is handled by the guard below.
             guard let field = searchItem?.searchField else { return }
+            let window = field.window
             parent.query = ""
             parent.isSearchPresented = false
-            field.window?.makeFirstResponder(nil)
+            window?.makeFirstResponder(nil)
+            restoreTerminalFocus(in: window)
+        }
+
+        private func restoreTerminalFocus(in window: NSWindow?) {
+            guard let window,
+                  let contentView = window.contentView,
+                  let terminal = firstTerminalView(in: contentView)
+            else { return }
+
+            // Let AppKit finish ending the search editor before changing responders.
+            DispatchQueue.main.async { [weak window, weak terminal] in
+                guard let window, let terminal, terminal.window === window else { return }
+                window.makeFirstResponder(terminal)
+            }
+        }
+
+        private func firstTerminalView(in view: NSView) -> LineBreakTerminalView? {
+            if let terminal = view as? LineBreakTerminalView { return terminal }
+            for subview in view.subviews {
+                if let terminal = firstTerminalView(in: subview) { return terminal }
+            }
+            return nil
         }
 
         func controlTextDidChange(_ obj: Notification) {
@@ -221,7 +243,9 @@ struct NativeToolbarBridge: NSViewRepresentable {
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.query = ""
                 parent.isSearchPresented = false
-                control.window?.makeFirstResponder(nil)
+                let window = control.window
+                window?.makeFirstResponder(nil)
+                restoreTerminalFocus(in: window)
                 return true
             default:
                 return false

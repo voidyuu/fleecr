@@ -205,6 +205,7 @@ final class LineBreakTerminalView: AppTerminalView {
     private var dragStartPoint: (x: Double, y: Double)?
     private var hasStartedDrag: Bool = false
     private var suppressProcessOutput: Bool = false
+    private var needsInitialFocus = false
 
     init(controller: TerminalController, session: InMemoryTerminalSession) {
         self.terminalController = controller
@@ -251,6 +252,28 @@ final class LineBreakTerminalView: AppTerminalView {
 
     func resetLightColorAdapter() {
         colorFilter.reset()
+    }
+
+    func requestInitialFocus() {
+        needsInitialFocus = true
+        acquireInitialFocusIfReady()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        acquireInitialFocusIfReady()
+    }
+
+    private func acquireInitialFocusIfReady() {
+        guard needsInitialFocus, window != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.needsInitialFocus,
+                  let window = self.window
+            else { return }
+            if window.makeFirstResponder(self), window.firstResponder === self {
+                self.needsInitialFocus = false
+            }
+        }
     }
 
     func startProcess(
@@ -840,10 +863,7 @@ struct AttachTerminalView: NSViewRepresentable {
             args: command.args,
             environment: environment
         )
-        DispatchQueue.main.async { [weak view] in
-            guard let view, let window = view.window else { return }
-            window.makeFirstResponder(view)
-        }
+        view.requestInitialFocus()
         onViewReady?(view)
         return view
     }
@@ -962,4 +982,3 @@ func applyTerminalAppearance(
     view.terminalController.setTerminalConfiguration(config)
     view.terminalController.setColorScheme(dark ? .dark : .light)
 }
-
