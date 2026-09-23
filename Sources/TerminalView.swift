@@ -286,6 +286,9 @@ final class LineBreakTerminalView: AppTerminalView {
             )
         } catch {
             NSLog("Failed to start LocalPTYProcess: \(error)")
+            self.process = nil
+            self.inMemorySession.finish(exitCode: 127, runtimeMilliseconds: 0)
+            self.processDelegate?.processTerminated(source: self, exitCode: 127)
         }
     }
 

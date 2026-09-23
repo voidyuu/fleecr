@@ -13,11 +13,13 @@ final class LocalPTYProcess: @unchecked Sendable {
     enum PTYError: LocalizedError {
         case failedToCreatePTY(Int32)
         case failedToFork(Int32)
+        case executableNotFound(String)
 
         var errorDescription: String? {
             switch self {
             case .failedToCreatePTY(let err): return "Failed to open PTY: errno \(err)"
             case .failedToFork(let err): return "Failed to fork child process: errno \(err)"
+            case .executableNotFound(let executable): return "Executable not found in PATH: \(executable)"
             }
         }
     }
@@ -58,30 +60,55 @@ final class LocalPTYProcess: @unchecked Sendable {
             ws_ypixel: 0
         )
 
-        // Pre-allocate all C strings before forkpty so the child never calls
-        // malloc or Swift runtime functions in a multithreaded process.
-        let cExecutable = strdup(executable)
+        // Keep all Swift work and allocation on the parent side of forkpty.
+        // The child only dereferences these buffers before execve.
+        guard let resolvedExecutable = Self.resolveExecutable(
+            executable,
+            environment: environment,
+            workingDirectory: workingDirectory
+        ) else {
+            throw PTYError.executableNotFound(executable)
+        }
+        let hasSlash = executable.contains("/")
+        let cExecutable = strdup(resolvedExecutable)
+        let cShellExecutable = strdup("/bin/sh")
         let fullArgs = [executable] + args
-        let cArgs: [UnsafeMutablePointer<CChar>?] = fullArgs.map { strdup($0) } + [nil]
+        let argv = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: fullArgs.count + 1)
+        for (index, value) in fullArgs.enumerated() {
+            argv[index] = strdup(value)
+        }
+        argv[fullArgs.count] = nil
+        let shellArgs = ["/bin/sh", resolvedExecutable] + args
+        let shellArgv = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: shellArgs.count + 1)
+        for (index, value) in shellArgs.enumerated() {
+            shellArgv[index] = strdup(value)
+        }
+        shellArgv[shellArgs.count] = nil
         let envStrings: [String] = environment.map { "\($0.key)=\($0.value)" }
-        let cEnv: [UnsafeMutablePointer<CChar>?] = envStrings.map { strdup($0) } + [nil]
+        let envp = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>.allocate(capacity: envStrings.count + 1)
+        for (index, value) in envStrings.enumerated() {
+            envp[index] = strdup(value)
+        }
+        envp[envStrings.count] = nil
         let cWorkingDir: UnsafeMutablePointer<CChar>? = workingDirectory.flatMap {
             $0.isEmpty ? nil : strdup($0)
         }
-        let hasSlash = executable.contains("/")
 
         var master: Int32 = -1
         let pid = forkpty(&master, nil, nil, &win)
         guard pid >= 0 else {
-            free(cExecutable)
-            cArgs.forEach { if let p = $0 { free(p) } }
-            cEnv.forEach { if let p = $0 { free(p) } }
-            if let p = cWorkingDir { free(p) }
-            throw PTYError.failedToFork(errno)
+            let error = errno
+            Darwin.free(cExecutable)
+            Darwin.free(cShellExecutable)
+            Self.freeVector(argv, count: fullArgs.count)
+            Self.freeVector(shellArgv, count: shellArgs.count)
+            Self.freeVector(envp, count: envStrings.count)
+            if let p = cWorkingDir { Darwin.free(p) }
+            throw PTYError.failedToFork(error)
         }
 
         if pid == 0 {
-            // Child process: execute directly with async-signal-safe calls only
+            // Child path avoids Swift collections and only calls async-signal-safe libc APIs.
             if let cWorkingDir {
                 _ = chdir(cWorkingDir)
             }
@@ -89,26 +116,20 @@ final class LocalPTYProcess: @unchecked Sendable {
             signal(SIGPIPE, SIG_DFL)
             signal(SIGCHLD, SIG_DFL)
 
-            cArgs.withUnsafeBufferPointer { argsPtr in
-                cEnv.withUnsafeBufferPointer { envPtr in
-                    let argv = UnsafeMutablePointer(mutating: argsPtr.baseAddress!)
-                    let envp = UnsafeMutablePointer(mutating: envPtr.baseAddress!)
-                    execve(cExecutable, argv, envp)
-                    // If execve failed and executable is not an absolute path, try execvp
-                    if !hasSlash {
-                        execvp(cExecutable, argv)
-                    }
-                }
+            execve(cExecutable, UnsafePointer(argv), UnsafePointer(envp))
+            if errno == ENOEXEC && !hasSlash {
+                execve(cShellExecutable, UnsafePointer(shellArgv), UnsafePointer(envp))
             }
-
             _exit(127)
         }
 
         // Parent process: free allocated argument and environment arrays
-        free(cExecutable)
-        cArgs.forEach { if let p = $0 { free(p) } }
-        cEnv.forEach { if let p = $0 { free(p) } }
-        if let p = cWorkingDir { free(p) }
+        Darwin.free(cExecutable)
+        Darwin.free(cShellExecutable)
+        Self.freeVector(argv, count: fullArgs.count)
+        Self.freeVector(shellArgv, count: shellArgs.count)
+        Self.freeVector(envp, count: envStrings.count)
+        if let p = cWorkingDir { Darwin.free(p) }
 
         stateLock.lock()
         shellPid = pid
@@ -219,34 +240,23 @@ final class LocalPTYProcess: @unchecked Sendable {
 
         let readSource = DispatchSource.makeReadSource(fileDescriptor: fd, queue: readQueue)
         readSource.setEventHandler { [weak self] in
-            self?.drainOutput()
+            self?.drainOutput(from: fd)
         }
-        readSource.setCancelHandler { [weak self] in
-            guard let self else { return }
-            self.stateLock.lock()
-            if self.masterFd >= 0 {
-                close(self.masterFd)
-                self.masterFd = -1
-            }
-            self.stateLock.unlock()
+        readSource.setCancelHandler {
+            close(fd)
         }
         readSource.resume()
         self.readSource = readSource
 
         let processSource = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: readQueue)
         processSource.setEventHandler { [weak self] in
-            self?.handleProcessExit()
+            self?.handleProcessExit(pid: pid)
         }
         processSource.resume()
         self.processSource = processSource
     }
 
-    private func drainOutput() {
-        stateLock.lock()
-        let fd = masterFd
-        stateLock.unlock()
-        guard fd >= 0 else { return }
-
+    private func drainOutput(from fd: Int32) {
         var buf = [UInt8](repeating: 0, count: 8192)
         var pending = Data()
         var isEOF = false
@@ -279,20 +289,30 @@ final class LocalPTYProcess: @unchecked Sendable {
         }
 
         if isEOF {
-            readSource?.cancel()
+            stateLock.lock()
+            let source: DispatchSourceRead?
+            if masterFd == fd {
+                masterFd = -1
+                source = readSource
+            } else {
+                source = nil
+            }
+            stateLock.unlock()
+            source?.cancel()
         }
     }
 
-    private func handleProcessExit() {
+    private func handleProcessExit(pid: pid_t) {
         // Drain any remaining output in PTY buffer before closing
-        drainOutput()
-
         stateLock.lock()
-        let pid = shellPid
+        let isCurrentProcess = shellPid == pid
+        let fd = masterFd
         stateLock.unlock()
+        guard isCurrentProcess else { return }
+        if fd >= 0 { drainOutput(from: fd) }
 
         var status: Int32 = 0
-        let waited = pid > 0 ? waitpid(pid, &status, 0) : -1
+        let waited = waitpid(pid, &status, 0)
         let exitCode: Int32
         if waited <= 0 {
             exitCode = 1
@@ -307,15 +327,50 @@ final class LocalPTYProcess: @unchecked Sendable {
     }
 
     private func cleanup() {
-        readSource?.cancel()
-        readSource = nil
-
-        processSource?.cancel()
-        processSource = nil
-
         stateLock.lock()
+        let readSource = self.readSource
+        let processSource = self.processSource
+        self.readSource = nil
+        self.processSource = nil
+        masterFd = -1
         shellPid = 0
         stateLock.unlock()
+
+        readSource?.cancel()
+        processSource?.cancel()
+    }
+
+    private static func freeVector(
+        _ vector: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>,
+        count: Int
+    ) {
+        for index in 0..<count {
+            if let value = vector[index] { Darwin.free(value) }
+        }
+        vector.deallocate()
+    }
+
+    private static func resolveExecutable(
+        _ executable: String,
+        environment: [String: String],
+        workingDirectory: String?
+    ) -> String? {
+        guard !executable.contains("/") else { return executable }
+        let path = environment["PATH"] ?? ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+        let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let workingDirectory = workingDirectory.map {
+            URL(fileURLWithPath: $0, relativeTo: currentDirectory).standardizedFileURL
+        } ?? currentDirectory
+
+        for directory in path.split(separator: ":", omittingEmptySubsequences: false) {
+            let candidate = directory.isEmpty
+                ? workingDirectory.appendingPathComponent(executable)
+                : URL(fileURLWithPath: String(directory), relativeTo: workingDirectory)
+                    .appendingPathComponent(executable)
+                    .standardizedFileURL
+            if access(candidate.path, X_OK) == 0 { return candidate.path }
+        }
+        return nil
     }
 }
 #endif
