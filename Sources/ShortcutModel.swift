@@ -290,6 +290,14 @@ extension ShortcutItem {
             description: String(localized: "shortcut.desc.newTerminal", defaultValue: "Start a new terminal session")
         ),
         ShortcutItem(
+            id: "renameTab",
+            name: String(localized: "shortcut.action.renameTab", defaultValue: "Rename Current Tab"),
+            category: .general,
+            icon: "pencil",
+            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_ANSI_T), modifiers: [.command, .shift], keyDisplay: "T"),
+            description: String(localized: "shortcut.desc.renameTab", defaultValue: "Rename the current agent or terminal tab")
+        ),
+        ShortcutItem(
             id: "newSpace",
             name: String(localized: "shortcut.action.newSpace", defaultValue: "New Space"),
             category: .general,
@@ -302,7 +310,7 @@ extension ShortcutItem {
             name: String(localized: "shortcut.action.closePane", defaultValue: "Close Current Pane"),
             category: .general,
             icon: "xmark.square",
-            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_ANSI_W), modifiers: [.command], keyDisplay: "W"),
+            defaultShortcut: KeyCombination(keyCode: UInt16(kVK_ANSI_W), modifiers: [.command, .shift], keyDisplay: "W"),
             description: String(localized: "shortcut.desc.closePane", defaultValue: "Close the currently selected terminal or agent")
         ),
         ShortcutItem(

@@ -56,6 +56,18 @@ final class ShortcutDispatcher {
             model.startNewTerminal()
             return true
 
+        case "renameTab":
+            let mainWindowID = NSUserInterfaceItemIdentifier("fleecr.main")
+            guard NSApp.keyWindow?.identifier == mainWindowID,
+                  NSApp.keyWindow?.attachedSheet == nil,
+                  let entry = model.selectedAttachedEntry
+            else { return false }
+            switch entry {
+            case .agent(let agent): model.agentToRename = agent
+            case .terminal(let terminal): model.terminalToRename = terminal
+            }
+            return true
+
         case "newSpace":
             model.createNewSpace()
             return true

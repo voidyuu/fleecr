@@ -149,8 +149,6 @@ struct SettingsView: View {
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
             NotificationSettingsView()
                 .tabItem { Label("Notifications", systemImage: "bell") }
-            AboutSettingsView()
-                .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 520)
     }
@@ -277,13 +275,13 @@ struct AppearanceSettingsView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
-            Picker("Dark Mode Theme", selection: darkThemeSelection) {
+            Picker("Dark Mode", selection: darkThemeSelection) {
                 ForEach(AppTheme.darkThemes) { theme in
                     themeLabel(theme).tag(theme)
                 }
             }
 
-            Picker("Light Mode Theme", selection: lightThemeSelection) {
+            Picker("Light Mode", selection: lightThemeSelection) {
                 ForEach(AppTheme.lightThemes) { theme in
                     themeLabel(theme).tag(theme)
                 }
@@ -432,18 +430,5 @@ struct NotificationSettingsView: View {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async { authorization = settings.authorizationStatus }
         }
-    }
-}
-
-struct AboutSettingsView: View {
-    var body: some View {
-        Form {
-            Text("fleecr — a native macOS console for herdr.")
-                .font(.system(size: 12.5))
-            Text(String(localized: "Devices are managed from the Devices tab in Settings.", defaultValue: "Devices are managed from the Devices tab in Settings."))
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-        }
-        .padding(20)
     }
 }

@@ -593,22 +593,6 @@
         }
       }
     },
-    "About": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "About"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关于"
-          }
-        }
-      }
-    },
     "Automatic": {
       "localizations": {
         "en": {
@@ -1681,34 +1665,34 @@
         }
       }
     },
-    "Dark Mode Theme": {
+    "Dark Mode": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dark Mode Theme"
+            "value": "Dark Mode"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "深色模式主题"
+            "value": "深色模式"
           }
         }
       }
     },
-    "Light Mode Theme": {
+    "Light Mode": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Light Mode Theme"
+            "value": "Light Mode"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "浅色模式主题"
+            "value": "浅色模式"
           }
         }
       }
