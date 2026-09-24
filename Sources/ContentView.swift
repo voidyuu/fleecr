@@ -314,7 +314,7 @@ private final class SidebarTitlebarAccessoryController: NSTitlebarAccessoryViewC
         let sidebarButton = makeButton("sidebar.left", label: "Toggle sidebar", action: #selector(toggleSidebarAction))
         let spaceButton = makeButton("folder.badge.plus", label: "New Space", action: #selector(createSpaceAction))
 
-        let stack = NSStackView(views: [sidebarButton, spaceButton])
+        let stack = NSStackView(views: [spaceButton, sidebarButton])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 4
