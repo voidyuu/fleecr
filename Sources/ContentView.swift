@@ -475,8 +475,8 @@ struct DetailView: View {
     @AppStorage(TerminalDefaults.fontWeightKey) private var terminalFontWeight = TerminalDefaults.defaultFontWeight
     @AppStorage(TerminalDefaults.lineSpacingKey) private var terminalLineSpacing = TerminalDefaults.defaultLineSpacing
     @AppStorage(TerminalDefaults.mouseReportingKey) private var terminalMouseReporting = TerminalDefaults.defaultMouseReporting
-    /// The entry whose attach process exited, and how. Keyed by entry id so a stale
-    /// exit from a previously selected pane never covers a live terminal.
+    /// The attach target whose process exited, and how. The key includes the entry,
+    /// target ID, and server version so a stale exit never covers a live terminal.
     @State private var endedAttachKey: String?
     @State private var endedAttachCode: Int32?
     @State private var attachRetry = 0
@@ -490,6 +490,14 @@ struct DetailView: View {
     @ViewBuilder
     private var attachedTerminal: some View {
         if let entry = model.selectedAttachedEntry {
+            let serverVersion = model.serverVersion(deviceID: entry.device.id)
+            let targetIdentity: String = {
+                switch entry.attachTarget {
+                case .agent(let paneID): return "agent-\(paneID)"
+                case .terminal(let terminalID): return "terminal-\(terminalID)"
+                }
+            }()
+            let attachKey = "\(entry.id)-\(targetIdentity)-\(serverVersion ?? "unknown")"
             let attachmentCapabilities: AgentAttachmentCapabilities? = {
                 guard case .agent(let agentEntry) = entry else { return nil }
                 return model.attachmentCapabilities(
@@ -501,7 +509,7 @@ struct DetailView: View {
                 AttachTerminalView(
                     device: entry.device,
                     target: entry.attachTarget,
-                    serverVersion: model.serverVersion(deviceID: entry.device.id),
+                    serverVersion: serverVersion,
                     attachmentCapabilities: attachmentCapabilities,
                     fontName: terminalFontName,
                     fontSize: terminalFontSize,
@@ -513,12 +521,12 @@ struct DetailView: View {
                     onAttachmentError: { model.actionError = $0 },
                     onAttachmentUploadingChanged: { uploadingAttachment = $0 },
                     onExit: { code in
-                        endedAttachKey = entry.id
+                        endedAttachKey = attachKey
                         endedAttachCode = code
                     }
                 )
-                .id("attach-\(entry.id)-\(attachRetry)")
-                if endedAttachKey == entry.id {
+                .id("attach-\(attachKey)-\(attachRetry)")
+                if endedAttachKey == attachKey {
                     attachEndedOverlay(entry)
                 }
             }
@@ -527,7 +535,7 @@ struct DetailView: View {
             .overlay(alignment: .bottomTrailing) {
                 if uploadingAttachment { uploadIndicator }
             }
-            .onChange(of: entry.id) { _, _ in
+            .onChange(of: attachKey) { _, _ in
                 endedAttachKey = nil
                 uploadingAttachment = false
             }
