@@ -7,6 +7,17 @@ a release without a section here fails CI.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-24
+
+### Added
+- Persist the sidebar width.
+
+### Changed
+- Refactor app model, split view, and form sheet organization.
+
+### Fixed
+- Preserve Ghostty attach view identity.
+
 ## [1.0.1] - 2026-09-24
 
 ### Added
