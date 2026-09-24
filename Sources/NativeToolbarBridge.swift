@@ -1,14 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// Owns the window toolbar with AppKit rather than asking SwiftUI to merge a
-/// `.searchable` item with independently placed toolbar actions. The order is
-/// exact: leading controls, one flexible space, New Terminal, then the native
-/// `NSSearchToolbarItem`. Therefore + and search are adjacent, with no hidden
-/// SwiftUI placement region between them.
+/// Owns the terminal and search items in the window toolbar with AppKit, keeping
+/// New Terminal adjacent to the native `NSSearchToolbarItem`.
 struct NativeToolbarBridge: NSViewRepresentable {
     @ObservedObject var model: AppModel
-    @Binding var sidebarCollapsed: Bool
     @Binding var query: String
     @Binding var isSearchPresented: Bool
 
@@ -30,8 +26,6 @@ struct NativeToolbarBridge: NSViewRepresentable {
     final class Coordinator: NSObject, NSToolbarDelegate, NSSearchFieldDelegate {
         private enum ID {
             static let toolbar = NSToolbar.Identifier("fleecr.toolbar")
-            static let sidebar = NSToolbarItem.Identifier("fleecr.sidebar")
-            static let space = NSToolbarItem.Identifier("fleecr.new-space")
             static let terminal = NSToolbarItem.Identifier("fleecr.new-terminal")
             static let search = NSToolbarItem.Identifier("fleecr.search")
         }
@@ -52,6 +46,7 @@ struct NativeToolbarBridge: NSViewRepresentable {
             let toolbar = NSToolbar(identifier: ID.toolbar)
             toolbar.delegate = self
             toolbar.displayMode = .iconOnly
+            toolbar.sizeMode = .regular
             toolbar.allowsUserCustomization = false
             toolbar.autosavesConfiguration = false
             window.toolbar = toolbar
@@ -59,12 +54,11 @@ struct NativeToolbarBridge: NSViewRepresentable {
         }
 
         func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-            [ID.sidebar, ID.space, .flexibleSpace, ID.terminal, ID.search]
+            [.flexibleSpace, ID.terminal, ID.search]
         }
 
         func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-            // The flexible space is deliberately before +, never between + and search.
-            [ID.sidebar, ID.space, .flexibleSpace, ID.terminal, ID.search]
+            [.flexibleSpace, ID.terminal, ID.search]
         }
 
         func toolbar(
@@ -73,10 +67,6 @@ struct NativeToolbarBridge: NSViewRepresentable {
             willBeInsertedIntoToolbar flag: Bool
         ) -> NSToolbarItem? {
             switch itemIdentifier {
-            case ID.sidebar:
-                return buttonItem(ID.sidebar, image: "sidebar.left", label: "Toggle sidebar", action: #selector(toggleSidebar))
-            case ID.space:
-                return buttonItem(ID.space, image: "folder.badge.plus", label: "New Space", action: #selector(newSpace))
             case ID.terminal:
                 return buttonItem(ID.terminal, image: "plus", label: "New Terminal", action: #selector(newTerminal))
             case ID.search:
@@ -133,12 +123,7 @@ struct NativeToolbarBridge: NSViewRepresentable {
             }
         }
 
-        @objc private func toggleSidebar() { parent.sidebarCollapsed.toggle() }
         @objc private func newTerminal() { parent.model.startNewTerminal() }
-        @objc private func newSpace() {
-            guard let space = parent.model.currentSpace, let device = parent.model.device(space.deviceID) else { return }
-            parent.model.createNewSpace(on: device)
-        }
         private func submitSearch() {
             // Enter commits: clears the field, releases the filter, then returns
             // focus to the terminal. IME composition is handled by the guard below.

@@ -29,17 +29,15 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            HStack(spacing: 0) {
-                SidebarView(model: model, collapsed: $sidebarCollapsed, query: $searchQuery)
-                    .frame(width: sidebarCollapsed ? 0 : 260, alignment: .trailing)
-                    .clipped()
-                Rectangle()
-                    .fill(Theme.sidebarBorder)
-                    .frame(width: sidebarCollapsed ? 0 : 1)
-                    .ignoresSafeArea()
-                DetailView(model: model, sidebarCollapsed: $sidebarCollapsed, query: $searchQuery)
-            }
-            .animation(.easeInOut(duration: 0.2), value: sidebarCollapsed)
+            AppKitSplitView(
+                sidebarCollapsed: $sidebarCollapsed,
+                sidebar: AnyView(SidebarView(model: model, query: $searchQuery)),
+                detail: AnyView(DetailView(model: model, query: $searchQuery)),
+                createSpace: {
+                    guard let space = model.currentSpace, let device = model.device(space.deviceID) else { return }
+                    model.createNewSpace(on: device)
+                }
+            )
             .ignoresSafeArea(edges: .top)
         }
         .background(
@@ -105,6 +103,279 @@ struct RootView: View {
 
 }
 
+private struct AppKitSplitView: NSViewControllerRepresentable {
+    @Binding var sidebarCollapsed: Bool
+    let sidebar: AnyView
+    let detail: AnyView
+    let createSpace: () -> Void
+
+    func makeNSViewController(context: Context) -> RootSplitViewController {
+        RootSplitViewController(sidebar: sidebar, detail: detail)
+    }
+
+    func updateNSViewController(_ controller: RootSplitViewController, context: Context) {
+        controller.sidebarHost.rootView = sidebar
+        controller.detailHost.rootView = detail
+        let collapsed = _sidebarCollapsed
+        controller.installTitlebarAccessory(
+            on: controller.view.window,
+            toggleSidebar: { collapsed.wrappedValue.toggle() },
+            createSpace: createSpace
+        )
+        controller.setSidebarCollapsed(sidebarCollapsed)
+    }
+}
+
+private final class RootSplitViewController: NSSplitViewController {
+    let sidebarHost: NSHostingController<AnyView>
+    let detailHost: NSHostingController<AnyView>
+    let sidebarItem: NSSplitViewItem
+    private weak var accessoryWindow: NSWindow?
+    private var sidebarAccessory: SidebarTitlebarAccessoryController?
+    private var toggleSidebarAction: (() -> Void)?
+    private var createSpaceAction: (() -> Void)?
+    private var accessoryWidthUpdateScheduled = false
+    private var isAnimatingSidebarTransition = false
+    private var transitionTargetCollapsed: Bool?
+    private var expandedAccessoryWidth: CGFloat?
+    private var previousInitialAccessoryWidth: CGFloat?
+    private var initialAccessoryLayoutPasses = 0
+    private var initialAccessoryLayoutReady = false
+
+    init(sidebar: AnyView, detail: AnyView) {
+        let sidebarHost = NSHostingController(rootView: sidebar)
+        let detailHost = NSHostingController(rootView: detail)
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarHost)
+        sidebarItem.preferredThicknessFraction = 260.0 / 980.0
+        sidebarItem.minimumThickness = 200
+        sidebarItem.maximumThickness = 380
+
+        self.sidebarHost = sidebarHost
+        self.detailHost = detailHost
+        self.sidebarItem = sidebarItem
+        super.init(nibName: nil, bundle: nil)
+
+        splitView.isVertical = true
+        splitView.dividerStyle = .thin
+        addSplitViewItem(sidebarItem)
+        addSplitViewItem(NSSplitViewItem(viewController: detailHost))
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        scheduleAccessoryWidthUpdate()
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        installTitlebarAccessoryIfNeeded()
+        view.layoutSubtreeIfNeeded()
+        sidebarHost.view.layoutSubtreeIfNeeded()
+        updateAccessoryWidth()
+    }
+
+    func installTitlebarAccessory(
+        on window: NSWindow?,
+        toggleSidebar: @escaping () -> Void,
+        createSpace: @escaping () -> Void
+    ) {
+        self.toggleSidebarAction = toggleSidebar
+        self.createSpaceAction = createSpace
+        installTitlebarAccessoryIfNeeded(on: window)
+    }
+
+    private func installTitlebarAccessoryIfNeeded(on window: NSWindow? = nil) {
+        guard let window = window ?? view.window,
+              accessoryWindow !== window,
+              let toggleSidebarAction,
+              let createSpaceAction
+        else { return }
+
+        let accessory = SidebarTitlebarAccessoryController(
+            toggleSidebar: toggleSidebarAction,
+            createSpace: createSpaceAction,
+            onLayout: { [weak self] in self?.scheduleAccessoryWidthUpdate() }
+        )
+        accessory.layoutAttribute = .left
+        window.addTitlebarAccessoryViewController(accessory)
+        sidebarAccessory = accessory
+        accessoryWindow = window
+        scheduleAccessoryWidthUpdate()
+    }
+
+    func setSidebarCollapsed(_ collapsed: Bool) {
+        if isAnimatingSidebarTransition, transitionTargetCollapsed == collapsed { return }
+        guard sidebarItem.isCollapsed != collapsed else { return }
+        guard let accessory = sidebarAccessory else {
+            toggleSidebar(nil)
+            return
+        }
+
+        let targetWidth: CGFloat
+        if collapsed {
+            expandedAccessoryWidth = expandedLayoutWidth(for: accessory)
+            targetWidth = accessory.minimumLayoutWidth
+        } else {
+            targetWidth = expandedAccessoryWidth ?? expandedLayoutWidth(for: accessory)
+        }
+
+        isAnimatingSidebarTransition = true
+        transitionTargetCollapsed = collapsed
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            accessory.animateSidebarLayoutWidth(targetWidth)
+            toggleSidebar(nil)
+        } completionHandler: { [weak self] in
+            guard let self else { return }
+            isAnimatingSidebarTransition = false
+            transitionTargetCollapsed = nil
+            scheduleAccessoryWidthUpdate()
+        }
+    }
+
+    override func splitViewDidResizeSubviews(_ notification: Notification) {
+        super.splitViewDidResizeSubviews(notification)
+        if !isAnimatingSidebarTransition { scheduleAccessoryWidthUpdate() }
+    }
+
+    private func scheduleAccessoryWidthUpdate() {
+        guard !accessoryWidthUpdateScheduled else { return }
+        accessoryWidthUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            accessoryWidthUpdateScheduled = false
+            guard !isAnimatingSidebarTransition else { return }
+            updateAccessoryWidth()
+        }
+    }
+
+    private func updateAccessoryWidth() {
+        guard accessoryWindow != nil,
+              let accessory = sidebarAccessory,
+              sidebarHost.view.window === accessory.view.window
+        else { return }
+
+        if sidebarItem.isCollapsed {
+            applyAccessoryWidth(accessory.minimumLayoutWidth, to: accessory)
+            return
+        }
+
+        let width = expandedLayoutWidth(for: accessory)
+        expandedAccessoryWidth = width
+        applyAccessoryWidth(width, to: accessory)
+    }
+
+    private func applyAccessoryWidth(_ width: CGFloat, to accessory: SidebarTitlebarAccessoryController) {
+        accessory.setSidebarLayoutWidth(width)
+        guard !initialAccessoryLayoutReady else { return }
+
+        initialAccessoryLayoutPasses += 1
+        if let previousInitialAccessoryWidth,
+           abs(previousInitialAccessoryWidth - width) <= 0.5 || initialAccessoryLayoutPasses >= 4 {
+            initialAccessoryLayoutReady = true
+            accessory.showButtons()
+        } else {
+            previousInitialAccessoryWidth = width
+            scheduleAccessoryWidthUpdate()
+        }
+    }
+
+    private func expandedLayoutWidth(for accessory: SidebarTitlebarAccessoryController) -> CGFloat {
+        let dividerX = sidebarHost.view.convert(
+            NSPoint(x: sidebarHost.view.bounds.maxX, y: sidebarHost.view.bounds.midY),
+            to: nil
+        ).x
+        let accessoryX = accessory.view.convert(.zero, to: nil).x
+        return max(dividerX - accessoryX, accessory.minimumLayoutWidth)
+    }
+
+}
+
+@MainActor
+private final class SidebarTitlebarAccessoryController: NSTitlebarAccessoryViewController {
+    private let toggleSidebar: () -> Void
+    private let createSpace: () -> Void
+    private let onLayout: () -> Void
+    private let stackTrailingInset: CGFloat = 8
+    private var collapsedMinimumWidth: CGFloat = 0
+
+    init(
+        toggleSidebar: @escaping () -> Void,
+        createSpace: @escaping () -> Void,
+        onLayout: @escaping () -> Void
+    ) {
+        self.toggleSidebar = toggleSidebar
+        self.createSpace = createSpace
+        self.onLayout = onLayout
+        super.init(nibName: nil, bundle: nil)
+
+        let sidebarButton = makeButton("sidebar.left", label: "Toggle sidebar", action: #selector(toggleSidebarAction))
+        let spaceButton = makeButton("folder.badge.plus", label: "New Space", action: #selector(createSpaceAction))
+
+        let stack = NSStackView(views: [sidebarButton, spaceButton])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.isHidden = true
+
+        let accessoryView = NSView()
+        accessoryView.addSubview(stack)
+        collapsedMinimumWidth = stack.fittingSize.width + stackTrailingInset
+        NSLayoutConstraint.activate([
+            stack.trailingAnchor.constraint(equalTo: accessoryView.trailingAnchor, constant: -stackTrailingInset),
+            stack.centerYAnchor.constraint(equalTo: accessoryView.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: accessoryView.leadingAnchor)
+        ])
+        view = accessoryView
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        onLayout()
+    }
+
+    var minimumLayoutWidth: CGFloat { collapsedMinimumWidth }
+
+    func setSidebarLayoutWidth(_ width: CGFloat) {
+        guard abs(view.frame.width - width) > 0.5 else { return }
+        view.setFrameSize(NSSize(width: width, height: view.frame.height))
+    }
+
+    func animateSidebarLayoutWidth(_ width: CGFloat) {
+        guard abs(view.frame.width - width) > 0.5 else { return }
+        view.animator().setFrameSize(NSSize(width: width, height: view.frame.height))
+    }
+
+    func showButtons() {
+        view.subviews.first?.isHidden = false
+    }
+
+    private func makeButton(_ imageName: String, label: String, action: Selector) -> NSButton {
+        let image = NSImage(systemSymbolName: imageName, accessibilityDescription: label)!
+        let button = NSButton(image: image, target: self, action: action)
+        if #available(macOS 26.0, *) {
+            button.bezelStyle = .glass
+            button.borderShape = .circle
+        } else {
+            button.bezelStyle = .circular
+        }
+        button.toolTip = label
+        button.controlSize = .regular
+        button.font = .systemFont(ofSize: 16)
+        button.widthAnchor.constraint(equalToConstant: 35).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 35).isActive = true
+        return button
+    }
+
+    @objc private func toggleSidebarAction() { toggleSidebar() }
+    @objc private func createSpaceAction() { createSpace() }
+}
+
 
 /// Height of the band the native unified toolbar (52pt) occupies: the detail region reserves
 /// it so the terminal never renders under the traffic lights — all toolbar content is native.
@@ -116,7 +387,6 @@ enum TitlebarMetrics {
 
 struct DetailView: View {
     @ObservedObject var model: AppModel
-    @Binding var sidebarCollapsed: Bool
     // Search query shared with the sidebar filter. The toolbar search field writes
     // here; SidebarView reads the same value to filter its rows in place.
     @Binding var query: String
@@ -145,12 +415,10 @@ struct DetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(terminalBackground.ignoresSafeArea())
-        // AppKit owns the complete toolbar so + and its native search item are
-        // consecutive NSToolbar items, rather than separate SwiftUI placement zones.
+        // AppKit owns the terminal and search toolbar items so + and search remain adjacent.
         .background(
             NativeToolbarBridge(
                 model: model,
-                sidebarCollapsed: $sidebarCollapsed,
                 query: $query,
                 isSearchPresented: $searchFieldFocused
             )

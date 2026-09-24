@@ -20,7 +20,6 @@ struct VisualEffectView: NSViewRepresentable {
 
 struct SidebarView: View {
     @ObservedObject var model: AppModel
-    @Binding var collapsed: Bool
     // Shared toolbar search (⌘K): an active query hides non-matching rows in place.
     @Binding var query: String
     @ObservedObject private var themeStore = ThemeStore.shared
@@ -96,14 +95,14 @@ struct SidebarView: View {
             Spacer(minLength: 0)
             footer
         }
-        .padding(.top, 48)
-        .frame(width: 260)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.sidebarBackground(theme: themeStore.activeTheme).ignoresSafeArea())
     }
 
     // Filtered rows: layout/group order is unchanged; an empty query (no filter)
     // is the identity, a non-empty query keeps only what matches.
     private var filtering: Bool { SidebarSearch.isActive(query) }
+
     /// Spaces are only shown outside a search; while searching the sidebar flattens
     /// to just Agents + Terminals (spaces are no longer a grouping concept).
     private var displaySpaces: [AppModel.SpaceEntry] { model.visibleSpaces }
