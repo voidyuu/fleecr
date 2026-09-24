@@ -127,6 +127,8 @@ private struct AppKitSplitView: NSViewControllerRepresentable {
 }
 
 private final class RootSplitViewController: NSSplitViewController {
+    private static let sidebarWidthKey = "FleecrMainSidebarWidth"
+
     let sidebarHost: NSHostingController<AnyView>
     let detailHost: NSHostingController<AnyView>
     let sidebarItem: NSSplitViewItem
@@ -141,6 +143,7 @@ private final class RootSplitViewController: NSSplitViewController {
     private var previousInitialAccessoryWidth: CGFloat?
     private var initialAccessoryLayoutPasses = 0
     private var initialAccessoryLayoutReady = false
+    private var restoredSidebarWidth = false
 
     init(sidebar: AnyView, detail: AnyView) {
         let sidebarHost = NSHostingController(rootView: sidebar)
@@ -173,6 +176,17 @@ private final class RootSplitViewController: NSSplitViewController {
         installTitlebarAccessoryIfNeeded()
         view.layoutSubtreeIfNeeded()
         sidebarHost.view.layoutSubtreeIfNeeded()
+        if !restoredSidebarWidth {
+            restoredSidebarWidth = true
+            if UserDefaults.standard.object(forKey: Self.sidebarWidthKey) != nil {
+                let savedWidth = CGFloat(UserDefaults.standard.double(forKey: Self.sidebarWidthKey))
+                splitView.setPosition(
+                    min(max(savedWidth, sidebarItem.minimumThickness), sidebarItem.maximumThickness),
+                    ofDividerAt: 0
+                )
+                view.layoutSubtreeIfNeeded()
+            }
+        }
         updateAccessoryWidth()
     }
 
@@ -241,6 +255,12 @@ private final class RootSplitViewController: NSSplitViewController {
 
     override func splitViewDidResizeSubviews(_ notification: Notification) {
         super.splitViewDidResizeSubviews(notification)
+        if restoredSidebarWidth, !sidebarItem.isCollapsed {
+            let width = sidebarHost.view.frame.width
+            if width >= sidebarItem.minimumThickness, width <= sidebarItem.maximumThickness {
+                UserDefaults.standard.set(width, forKey: Self.sidebarWidthKey)
+            }
+        }
         if !isAnimatingSidebarTransition { scheduleAccessoryWidthUpdate() }
     }
 
