@@ -7,6 +7,18 @@ a release without a section here fails CI.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-24
+
+### Added
+- Added a keyboard shortcut to rename tabs.
+- Moved sidebar controls into the title bar.
+
+### Fixed
+- Animated the title bar controls when toggling the sidebar.
+- Restored terminal focus after search and attach.
+- Hardened local PTY startup and cleanup.
+- Matched the terminal theme to the app appearance.
+
 ## [1.0.0] - 2026-09-10
 
 ### Added
