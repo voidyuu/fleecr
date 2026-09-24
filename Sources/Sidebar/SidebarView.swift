@@ -78,13 +78,7 @@ struct SidebarView: View {
                         groupHeader("Terminals", expanded: $terminalsExpanded)
                         if terminalsExpanded {
                             ForEach(displayTerminals) { entry in
-                                terminalRow(entry)
-                                    .contextMenu {
-                                        Button(String(localized: "Rename Terminal…")) { model.terminalToRename = entry }
-                                        Button("Close Terminal…", role: .destructive) {
-                                            model.requestClosePane(entry.ref, name: entry.title)
-                                        }
-                                    }
+                                TerminalRowView(entry: entry, model: model)
                             }
                         }
                     }
@@ -175,42 +169,6 @@ struct SidebarView: View {
         .frame(height: 28)
     }
 
-
-    private func terminalRow(_ entry: AppModel.TerminalEntry) -> some View {
-        let selected = model.selectedPane == entry.ref
-        return Button {
-            model.selectAgent(entry.ref)
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Image(systemName: "terminal")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.textTertiary)
-                    Text(entry.title)
-                        .font(.system(size: 13.5))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                HStack(spacing: 5) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(Theme.textTertiary)
-                    Text(model.spaceName(deviceID: entry.device.id, workspaceID: entry.pane.workspaceID))
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .frame(height: 51)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(SidebarRowButtonStyle(selected: selected))
-    }
 
     private struct AgentRowView: View {
     let entry: AppModel.AgentEntry
@@ -478,6 +436,53 @@ private struct SpaceRowView: View {
         case .none: break
         }
         return parts.joined(separator: ", ")
+    }
+}
+
+/// Terminal rows select a pane and expose terminal-specific context actions.
+private struct TerminalRowView: View {
+    let entry: AppModel.TerminalEntry
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        Button {
+            model.selectAgent(entry.ref)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textTertiary)
+                    Text(entry.title)
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 5) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(Theme.textTertiary)
+                    Text(model.spaceName(deviceID: entry.device.id, workspaceID: entry.pane.workspaceID))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(height: 51)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SidebarRowButtonStyle(selected: model.selectedPane == entry.ref))
+        .contextMenu {
+            Button(String(localized: "Rename Terminal…")) { model.terminalToRename = entry }
+            Button("Close Terminal…", role: .destructive) {
+                model.requestClosePane(entry.ref, name: entry.title)
+            }
+        }
     }
 }
 
