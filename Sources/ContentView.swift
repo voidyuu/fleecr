@@ -225,13 +225,17 @@ private final class RootSplitViewController: NSSplitViewController {
         transitionTargetCollapsed = collapsed
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.25
-            accessory.animateSidebarLayoutWidth(targetWidth)
+            context.allowsImplicitAnimation = true
+            accessory.animateSidebarButtons(collapsed: collapsed, expandedWidth: expandedAccessoryWidth ?? targetWidth)
             toggleSidebar(nil)
         } completionHandler: { [weak self] in
-            guard let self else { return }
-            isAnimatingSidebarTransition = false
-            transitionTargetCollapsed = nil
-            scheduleAccessoryWidthUpdate()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if collapsed { accessory.setSidebarLayoutWidth(targetWidth) }
+                isAnimatingSidebarTransition = false
+                transitionTargetCollapsed = nil
+                scheduleAccessoryWidthUpdate()
+            }
         }
     }
 
@@ -299,6 +303,8 @@ private final class SidebarTitlebarAccessoryController: NSTitlebarAccessoryViewC
     private let createSpace: () -> Void
     private let onLayout: () -> Void
     private let stackTrailingInset: CGFloat = 8
+    private var stackWidth: CGFloat = 0
+    private var stackLeadingConstraint: NSLayoutConstraint!
     private var collapsedMinimumWidth: CGFloat = 0
 
     init(
@@ -319,15 +325,16 @@ private final class SidebarTitlebarAccessoryController: NSTitlebarAccessoryViewC
         stack.alignment = .centerY
         stack.spacing = 4
         stack.translatesAutoresizingMaskIntoConstraints = false
+        stackWidth = stack.fittingSize.width
         stack.isHidden = true
 
         let accessoryView = NSView()
         accessoryView.addSubview(stack)
-        collapsedMinimumWidth = stack.fittingSize.width + stackTrailingInset
+        collapsedMinimumWidth = stackWidth + stackTrailingInset
+        stackLeadingConstraint = stack.leadingAnchor.constraint(equalTo: accessoryView.leadingAnchor)
         NSLayoutConstraint.activate([
-            stack.trailingAnchor.constraint(equalTo: accessoryView.trailingAnchor, constant: -stackTrailingInset),
+            stackLeadingConstraint,
             stack.centerYAnchor.constraint(equalTo: accessoryView.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: accessoryView.leadingAnchor)
         ])
         view = accessoryView
     }
@@ -342,13 +349,20 @@ private final class SidebarTitlebarAccessoryController: NSTitlebarAccessoryViewC
     var minimumLayoutWidth: CGFloat { collapsedMinimumWidth }
 
     func setSidebarLayoutWidth(_ width: CGFloat) {
-        guard abs(view.frame.width - width) > 0.5 else { return }
-        view.setFrameSize(NSSize(width: width, height: view.frame.height))
+        if abs(view.frame.width - width) > 0.5 {
+            view.setFrameSize(NSSize(width: width, height: view.frame.height))
+        }
+        stackLeadingConstraint.constant = max(0, width - stackWidth - stackTrailingInset)
     }
 
-    func animateSidebarLayoutWidth(_ width: CGFloat) {
-        guard abs(view.frame.width - width) > 0.5 else { return }
-        view.animator().setFrameSize(NSSize(width: width, height: view.frame.height))
+    func animateSidebarButtons(collapsed: Bool, expandedWidth: CGFloat) {
+        if abs(view.frame.width - expandedWidth) > 0.5 {
+            view.setFrameSize(NSSize(width: expandedWidth, height: view.frame.height))
+        }
+        stackLeadingConstraint.animator().constant = collapsed
+            ? 0
+            : max(0, expandedWidth - stackWidth - stackTrailingInset)
+        view.layoutSubtreeIfNeeded()
     }
 
     func showButtons() {
