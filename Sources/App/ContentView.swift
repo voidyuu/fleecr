@@ -118,6 +118,14 @@ struct DetailView: View {
     var body: some View {
         detailContent
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(edges: .top)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .frame(height: TitlebarMetrics.height)
+                .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .bottom))
+                .allowsHitTesting(false)
+        }
         .background(terminalBackground.ignoresSafeArea())
         // AppKit owns the terminal and search toolbar items so + and search remain adjacent.
         .background(

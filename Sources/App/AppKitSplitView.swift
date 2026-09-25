@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Lets us reach the hosting NSWindow to e.g. force a fully transparent title bar
-/// (keeps the native toolbar's volume/layout while removing its colour).
+/// Lets us reach the hosting NSWindow so content can extend beneath the titlebar
+/// toolbar.
 struct WindowAccessor: NSViewRepresentable {
     var onUpdate: (NSWindow?) -> Void
 
@@ -62,6 +62,8 @@ final class RootSplitViewController: NSSplitViewController {
     init(sidebar: AnyView, detail: AnyView) {
         let sidebarHost = NSHostingController(rootView: sidebar)
         let detailHost = NSHostingController(rootView: detail)
+        // Let the terminal render underneath the transparent titlebar toolbar.
+        detailHost.safeAreaRegions = []
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarHost)
         sidebarItem.preferredThicknessFraction = 260.0 / 980.0
         sidebarItem.minimumThickness = 200
