@@ -7,6 +7,11 @@ a release without a section here fails CI.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-09-25
+
+### Changed
+- Refined the title bar blur and removed the extra terminal top inset.
+
 ## [1.0.2] - 2026-09-24
 
 ### Added
