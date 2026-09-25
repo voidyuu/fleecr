@@ -87,11 +87,8 @@ struct RootView: View {
 
 }
 
-/// Height of the band the native unified toolbar (52pt) occupies: the detail region reserves
-/// it so the terminal never renders under the traffic lights — all toolbar content is native.
+/// Height of the native unified toolbar band; the sidebar toggle matches it.
 enum TitlebarMetrics {
-    /// Height of the band the native unified toolbar (52pt) occupies: the detail region reserves
-    /// it so the terminal never renders under the traffic lights — all toolbar content is native.
     static let height: CGFloat = 54
 }
 
@@ -119,10 +116,7 @@ struct DetailView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            titlebar
-            detailContent
-        }
+        detailContent
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(terminalBackground.ignoresSafeArea())
         // AppKit owns the terminal and search toolbar items so + and search remain adjacent.
@@ -151,16 +145,6 @@ struct DetailView: View {
 
     private var detailContent: some View {
         terminal.clipped()
-    }
-
-    // MARK: - Toolbar band
-
-    /// Reserves the unified toolbar band so the terminal never draws under the
-    /// traffic lights. Search itself is a native `.searchable` toolbar item, which
-    /// macOS places immediately to the left of the New Terminal (+) action.
-    private var titlebar: some View {
-        terminalBackground
-            .frame(height: TitlebarMetrics.height)
     }
 
     // MARK: - Terminal
