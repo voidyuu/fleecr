@@ -13,7 +13,7 @@
   <a href="https://github.com/voidyuu/fleecr/releases/latest"><img src="https://img.shields.io/github/v/release/voidyuu/fleecr?color=blue" alt="Latest Release" /></a>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-007AFF?logo=apple&logoColor=white" alt="macOS 14.0+" />
   <img src="https://img.shields.io/badge/terminal-libghostty-FF6B6B" alt="libghostty" />
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-green" alt="License: PolyForm Noncommercial 1.0.0" /></a>
 </p>
 
 <p align="center">
@@ -66,4 +66,4 @@ make run     # Launch app
 
 ## 📄 License
 
-Licensed under the [MIT License](LICENSE).
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE).

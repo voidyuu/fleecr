@@ -12,7 +12,7 @@
   <a href="https://github.com/voidyuu/fleecr/releases/latest"><img src="https://img.shields.io/github/v/release/voidyuu/fleecr?color=blue" alt="最新版本" /></a>
   <img src="https://img.shields.io/badge/macOS-14.0%2B-007AFF?logo=apple&logoColor=white" alt="macOS 14.0+" />
   <img src="https://img.shields.io/badge/终端核心-libghostty-FF6B6B" alt="libghostty" />
-  <a href="LICENSE"><img src="https://img.shields.io/badge/开源协议-MIT-green" alt="协议: MIT" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/许可证-PolyForm%20Noncommercial%201.0.0-green" alt="许可证：PolyForm Noncommercial 1.0.0" /></a>
 </p>
 
 <p align="center">
@@ -63,6 +63,6 @@ make run     # 运行应用
 - [libghostty](https://github.com/ghostty-org/ghostty) — 极速的现代终端模拟引擎。
 - [s1dashu/ip-as-logo-skill](https://github.com/s1dashu/ip-as-logo-skill) — 应用图标设计。
 
-## 📄 开源协议
+## 📄 许可证
 
-本项目采用 [MIT 许可证](LICENSE) 开源。
+本项目采用 [PolyForm Noncommercial 1.0.0 许可证](LICENSE)。
