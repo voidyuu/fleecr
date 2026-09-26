@@ -11,13 +11,11 @@ enum TerminalDefaults {
     static let thinStrokesKey = "terminal.thinStrokes"
     static let fontWeightKey = "terminal.fontWeight"
     static let lineSpacingKey = "terminal.lineSpacing"
-    static let mouseReportingKey = "terminal.mouseReporting"
     static let defaultFontSize: Double = 12.5
     /// `NSFont.Weight` rawValue; 0 is `.regular`. Only the system monospaced font
     /// has selectable weights — named families ship fixed faces and ignore this.
     static let defaultFontWeight: Double = 0
     static let defaultLineSpacing: Double = 1.0
-    static let defaultMouseReporting: Bool = false
     static let defaultPaddingX: Int = 8
     static let defaultPaddingY: Int = 6
     static let darkBackground = NSColor(
@@ -191,7 +189,6 @@ final class LineBreakTerminalView: AppTerminalView {
     var appliedDarkAppearance: Bool?
     var optionAsMetaKey = true
     var bracketedPasteMode = false
-    var mouseReporting = TerminalDefaults.defaultMouseReporting
     private var terminalColumns = 80
     private var terminalRows = 24
 
@@ -204,8 +201,6 @@ final class LineBreakTerminalView: AppTerminalView {
     var onAttachmentUploadingChanged: ((Bool) -> Void)?
     private var pendingUploads: [PendingAttachmentPaste] = []
     private var uploadTask: Task<Void, Never>?
-    private var dragStartPoint: (x: Double, y: Double)?
-    private var hasStartedDrag: Bool = false
     private var suppressProcessOutput: Bool = false
     private var needsInitialFocus = false
 
@@ -389,100 +384,12 @@ final class LineBreakTerminalView: AppTerminalView {
         )
     }
 
-    func clearSelection(at point: (x: Double, y: Double)? = nil) {
+    func clearSelection() {
         guard surface?.hasSelection() == true else { return }
         suppressProcessOutput = true
         defer { suppressProcessOutput = false }
-        if let point {
-            sendMousePos(x: point.x, y: point.y, modifiers: [])
-        }
         sendMouseButton(state: GHOSTTY_MOUSE_PRESS, button: GHOSTTY_MOUSE_LEFT, modifiers: [])
         sendMouseButton(state: GHOSTTY_MOUSE_RELEASE, button: GHOSTTY_MOUSE_LEFT, modifiers: [])
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
-        let point = terminalMousePoint(from: event)
-        let isShiftDown = event.modifierFlags.contains(.shift)
-
-        // If mouse reporting is disabled and the application captured the mouse (e.g. Claude Code),
-        // manage selection locally so that dragging selects text and clicking clears selection,
-        // without trapping Ghostty in Shift-extend mode.
-        if !mouseReporting && isMouseCaptured {
-            dragStartPoint = point
-            hasStartedDrag = false
-
-            if !isShiftDown && surface?.hasSelection() == true {
-                clearSelection(at: point)
-            }
-
-            if event.clickCount > 1 || isShiftDown {
-                let mods: TerminalInputModifiers = [.shift]
-                sendMousePos(x: point.x, y: point.y, modifiers: mods)
-                sendMouseButton(
-                    state: GHOSTTY_MOUSE_PRESS,
-                    button: GHOSTTY_MOUSE_LEFT,
-                    modifiers: mods
-                )
-            }
-            return
-        }
-
-        super.mouseDown(with: event)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        if !mouseReporting && isMouseCaptured {
-            let point = terminalMousePoint(from: event)
-            let mods: TerminalInputModifiers = [.shift]
-
-            if !hasStartedDrag {
-                hasStartedDrag = true
-                let start = dragStartPoint ?? point
-                sendMousePos(x: start.x, y: start.y, modifiers: mods)
-                sendMouseButton(
-                    state: GHOSTTY_MOUSE_PRESS,
-                    button: GHOSTTY_MOUSE_LEFT,
-                    modifiers: mods
-                )
-            }
-
-            sendMousePos(x: point.x, y: point.y, modifiers: mods)
-            return
-        }
-
-        super.mouseDragged(with: event)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        if !mouseReporting && isMouseCaptured {
-            let point = terminalMousePoint(from: event)
-            let isShiftDown = event.modifierFlags.contains(.shift)
-
-            if hasStartedDrag {
-                let mods: TerminalInputModifiers = [.shift]
-                sendMousePos(x: point.x, y: point.y, modifiers: mods)
-                sendMouseButton(
-                    state: GHOSTTY_MOUSE_RELEASE,
-                    button: GHOSTTY_MOUSE_LEFT,
-                    modifiers: mods
-                )
-            } else if event.clickCount > 1 || isShiftDown {
-                let mods: TerminalInputModifiers = [.shift]
-                sendMousePos(x: point.x, y: point.y, modifiers: mods)
-                sendMouseButton(
-                    state: GHOSTTY_MOUSE_RELEASE,
-                    button: GHOSTTY_MOUSE_LEFT,
-                    modifiers: mods
-                )
-            }
-
-            dragStartPoint = nil
-            hasStartedDrag = false
-            return
-        }
-
-        super.mouseUp(with: event)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -874,7 +781,6 @@ struct AttachTerminalView: NSViewRepresentable {
     var fontWeight: Double = TerminalDefaults.defaultFontWeight
     var lineSpacing: Double = TerminalDefaults.defaultLineSpacing
     var theme: AppTheme = .terminalDark
-    var mouseReporting: Bool = TerminalDefaults.defaultMouseReporting
     var onAttachmentError: (String) -> Void = { _ in }
     var onAttachmentUploadingChanged: (Bool) -> Void = { _ in }
     var onExit: ((Int32?) -> Void)? = nil
@@ -887,7 +793,6 @@ struct AttachTerminalView: NSViewRepresentable {
         let fontWeight: Double
         let lineSpacing: Double
         let theme: AppTheme
-        let mouseReporting: Bool
     }
 
     private var currentAppearanceKey: AppearanceKey {
@@ -897,8 +802,7 @@ struct AttachTerminalView: NSViewRepresentable {
             thinStrokes: thinStrokes,
             fontWeight: fontWeight,
             lineSpacing: lineSpacing,
-            theme: theme,
-            mouseReporting: mouseReporting
+            theme: theme
         )
     }
 
@@ -965,8 +869,7 @@ struct AttachTerminalView: NSViewRepresentable {
             thinStrokes: thinStrokes,
             fontWeight: fontWeight,
             lineSpacing: lineSpacing,
-            theme: theme,
-            mouseReporting: mouseReporting
+            theme: theme
         )
     }
 
@@ -1007,10 +910,9 @@ struct AttachTerminalView: NSViewRepresentable {
 func applyTerminalAppearance(
     _ view: EmbeddedTerminalView,
     fontName: String, fontSize: Double, thinStrokes: Bool,
-    fontWeight: Double, lineSpacing: Double, theme: AppTheme, mouseReporting: Bool
+    fontWeight: Double, lineSpacing: Double, theme: AppTheme
 ) {
     let dark = theme.isDark
-    view.mouseReporting = mouseReporting
     view.appliedDarkAppearance = dark
     view.usesLightColors = !dark
     if !dark {

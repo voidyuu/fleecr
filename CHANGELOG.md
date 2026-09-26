@@ -7,6 +7,12 @@ a release without a section here fails CI.
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-09-26
+
+### Changed
+- Use Herdr's terminal control stream for terminal sessions.
+- Remove the mouse reporting setting and its custom selection handling.
+
 ## [1.0.4] - 2026-09-26
 
 ### Changed

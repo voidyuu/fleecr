@@ -865,38 +865,6 @@
         }
       }
     },
-    "Mouse reporting": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mouse reporting"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "鼠标上报"
-          }
-        }
-      }
-    },
-    "Forwards clicks and drags to TUI apps that ask for them. Turn off to always select text with the mouse — Shift-drag selects either way.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Forwards clicks and drags to TUI apps that ask for them. Turn off to always select text with the mouse — Shift-drag selects either way."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "将点击和拖动转发给需要鼠标的 TUI 应用。关闭后鼠标始终用于选中文本；按住 Shift 拖动则两种模式都能选中。"
-          }
-        }
-      }
-    },
     "Reset to Defaults": {
       "localizations": {
         "en": {

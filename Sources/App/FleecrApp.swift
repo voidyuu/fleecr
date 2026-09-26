@@ -161,7 +161,6 @@ struct TerminalSettingsView: View {
     @AppStorage(TerminalDefaults.thinStrokesKey) private var thinStrokes = true
     @AppStorage(TerminalDefaults.fontWeightKey) private var fontWeight = TerminalDefaults.defaultFontWeight
     @AppStorage(TerminalDefaults.lineSpacingKey) private var lineSpacing = TerminalDefaults.defaultLineSpacing
-    @AppStorage(TerminalDefaults.mouseReportingKey) private var mouseReporting = TerminalDefaults.defaultMouseReporting
     @ObservedObject private var themeStore = ThemeStore.shared
 
     private let families = TerminalDefaults.monospacedFamilies()
@@ -221,23 +220,12 @@ struct TerminalSettingsView: View {
                     }
                 }
 
-                Toggle(isOn: $mouseReporting) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Mouse reporting")
-                        Text("Forwards clicks and drags to TUI apps that ask for them. Turn off to always select text with the mouse — Shift-drag selects either way.")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
                 Button("Reset to Defaults") {
                     fontName = ""
                     fontSize = TerminalDefaults.defaultFontSize
                     fontWeight = TerminalDefaults.defaultFontWeight
                     lineSpacing = TerminalDefaults.defaultLineSpacing
                     thinStrokes = true
-                    mouseReporting = TerminalDefaults.defaultMouseReporting
                 }
             }
 

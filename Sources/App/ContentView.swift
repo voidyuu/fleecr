@@ -162,7 +162,6 @@ struct DetailView: View {
     @AppStorage(TerminalDefaults.thinStrokesKey) private var terminalThinStrokes = true
     @AppStorage(TerminalDefaults.fontWeightKey) private var terminalFontWeight = TerminalDefaults.defaultFontWeight
     @AppStorage(TerminalDefaults.lineSpacingKey) private var terminalLineSpacing = TerminalDefaults.defaultLineSpacing
-    @AppStorage(TerminalDefaults.mouseReportingKey) private var terminalMouseReporting = TerminalDefaults.defaultMouseReporting
     /// The attach target whose process exited, and how. The key includes the entry,
     /// target ID, and server version so a stale exit never covers a live terminal.
     @State private var endedAttachKey: String?
@@ -205,7 +204,6 @@ struct DetailView: View {
                     fontWeight: terminalFontWeight,
                     lineSpacing: terminalLineSpacing,
                     theme: activeTerminalTheme,
-                    mouseReporting: terminalMouseReporting,
                     onAttachmentError: { model.actionError = $0 },
                     onAttachmentUploadingChanged: { uploadingAttachment = $0 },
                     onExit: { code in
