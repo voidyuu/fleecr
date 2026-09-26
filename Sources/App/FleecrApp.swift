@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         Task { @MainActor in
+            await TerminalSessionRegistry.shared.detachAll(signal: SIGHUP)
             await model.shutdownAllSessions()
             sender.reply(toApplicationShouldTerminate: true)
         }

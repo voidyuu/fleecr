@@ -479,8 +479,7 @@ public actor HerdrService {
         ].contains(name)
     }
 
-    /// Reads the pane's visible screen with ANSI intact. Returns nil text when unchanged
-    /// since `ifChangedFrom` (compared via the pane revision).
+    /// Reads the pane's visible screen with ANSI intact.
     public func readPane(paneID: String) async throws -> (text: String, revision: Int) {
         let result = try await client().request(
             method: "pane.read",
@@ -553,6 +552,63 @@ public actor HerdrService {
     }
 
     // MARK: - Terminal attach
+
+    /// Starts Herdr's newline-delimited terminal control stream. It begins with
+    /// the rendered screen, then streams ANSI render frames; input, resize, and
+    /// scroll commands go back over stdin. No local pseudo-terminal is needed.
+    public nonisolated func terminalSessionControlCommand(
+        target: TerminalAttachTarget,
+        serverVersion: String? = nil
+    ) -> TerminalCommand {
+        let targetID: String
+        switch target {
+        case .agent(let paneID): targetID = paneID
+        case .terminal(let terminalID): targetID = terminalID
+        }
+
+        let sessionPrefix = (device.session != "default" && !device.session.isEmpty)
+            ? "--session \(Self.shellQuoted(device.session)) "
+            : ""
+        let controlArguments = "terminal session control \(Self.shellQuoted(targetID)) --takeover --cols 80 --rows 24"
+
+        switch device.kind {
+        case .local:
+            var environment = (ShellEnvironment.cached ?? .empty).launchEnvironment(binary: nil)
+            environment.removeValue(forKey: "TERM")
+            environment.removeValue(forKey: "COLUMNS")
+            environment.removeValue(forKey: "LINES")
+            let script = "\(Self.attachBinarySelection(serverVersion: serverVersion)); "
+                + "exec \"$hb\" \(sessionPrefix)\(controlArguments)"
+            return TerminalCommand(
+                executable: "/bin/sh",
+                args: ["-c", script],
+                environment: environment,
+                authorizationID: nil
+            )
+        case .ssh(let target):
+            let script = "\(SSHTunnel.remotePathExport); \(Self.attachBinarySelection(serverVersion: serverVersion)); "
+                + "exec \"$hb\" \(sessionPrefix)\(controlArguments)"
+            let remote = "exec /bin/sh -c \(Self.shellQuoted(script))"
+            let authentication = SSHTunnel.authenticationConfiguration(for: device.id)
+            var environment = (ShellEnvironment.cached ?? .empty).launchEnvironment(binary: nil)
+            environment.merge(authentication.environment) { _, authenticationValue in authenticationValue }
+            environment.removeValue(forKey: "TERM")
+            environment.removeValue(forKey: "COLUMNS")
+            environment.removeValue(forKey: "LINES")
+            return TerminalCommand(
+                executable: "/usr/bin/ssh",
+                args: ["-T"] + authentication.arguments + [
+                    "-o", "StrictHostKeyChecking=accept-new",
+                    "-o", "ConnectTimeout=10",
+                    "-o", "ServerAliveInterval=15",
+                    "-o", "ServerAliveCountMax=3",
+                    SSHTunnel.sshDestination(target), remote,
+                ],
+                environment: environment,
+                authorizationID: authentication.authorizationID
+            )
+        }
+    }
 
     /// Shell fragment that picks the herdr binary to attach with. herdr's attach
     /// stream requires the CLI and server protocol versions to match exactly, so

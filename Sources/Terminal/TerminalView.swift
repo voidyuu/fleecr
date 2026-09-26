@@ -134,14 +134,14 @@ private enum ClipboardFileError: LocalizedError {
 }
 
 @MainActor
-protocol LocalProcessTerminalViewDelegate: AnyObject {
-    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int)
-    func setTerminalTitle(source: LocalProcessTerminalView, title: String)
-    func hostCurrentDirectoryUpdate(source: LocalProcessTerminalView, directory: String?)
-    func processTerminated(source: LocalProcessTerminalView, exitCode: Int32?)
+protocol TerminalControlViewDelegate: AnyObject {
+    func sizeChanged(source: EmbeddedTerminalView, newCols: Int, newRows: Int)
+    func setTerminalTitle(source: EmbeddedTerminalView, title: String)
+    func hostCurrentDirectoryUpdate(source: EmbeddedTerminalView, directory: String?)
+    func processTerminated(source: EmbeddedTerminalView, exitCode: Int32?)
 }
 
-typealias LocalProcessTerminalView = LineBreakTerminalView
+typealias EmbeddedTerminalView = LineBreakTerminalView
 
 final class TerminalOutputColorFilter: @unchecked Sendable {
     private let lock = NSLock()
@@ -177,11 +177,11 @@ final class TerminalOutputColorFilter: @unchecked Sendable {
 }
 
 /// Ghostty-backed terminal view supporting line break on Shift+Return,
-/// Mac editing shortcuts, file/image paste, and local PTY process execution.
+/// Mac editing shortcuts, file/image paste, and Herdr's terminal control stream.
 final class LineBreakTerminalView: AppTerminalView {
     let inMemorySession: InMemoryTerminalSession
     let terminalController: TerminalController
-    var process: LocalPTYProcess?
+    var terminalSession: HerdrTerminalControlProcess?
 
     private let colorFilter = TerminalOutputColorFilter()
     var usesLightColors: Bool {
@@ -192,8 +192,10 @@ final class LineBreakTerminalView: AppTerminalView {
     var optionAsMetaKey = true
     var bracketedPasteMode = false
     var mouseReporting = TerminalDefaults.defaultMouseReporting
+    private var terminalColumns = 80
+    private var terminalRows = 24
 
-    weak var processDelegate: LocalProcessTerminalViewDelegate?
+    weak var controlDelegate: TerminalControlViewDelegate?
 
     var attachmentCapabilities: AgentAttachmentCapabilities?
     var attachmentDeviceKind: Device.Kind = .local
@@ -223,14 +225,16 @@ final class LineBreakTerminalView: AppTerminalView {
             write: { data in
                 Task { @MainActor in
                     guard let weakSelf, !weakSelf.suppressProcessOutput else { return }
-                    weakSelf.process?.send(data)
+                    weakSelf.terminalSession?.send(data)
                 }
             },
             resize: { viewport in
                 Task { @MainActor in
-                    weakSelf?.process?.resize(columns: Int(viewport.columns), rows: Int(viewport.rows))
+                    weakSelf?.terminalSession?.resize(viewport)
                     if let ws = weakSelf {
-                        ws.processDelegate?.sizeChanged(source: ws, newCols: Int(viewport.columns), newRows: Int(viewport.rows))
+                        ws.terminalColumns = max(1, Int(viewport.columns))
+                        ws.terminalRows = max(1, Int(viewport.rows))
+                        ws.controlDelegate?.sizeChanged(source: ws, newCols: Int(viewport.columns), newRows: Int(viewport.rows))
                     }
                 }
             }
@@ -276,56 +280,67 @@ final class LineBreakTerminalView: AppTerminalView {
         }
     }
 
-    func startProcess(
+    func startTerminalSession(
         executable: String,
         args: [String],
-        environment: [String: String],
-        workingDirectory: String? = nil
+        environment: [String: String]
     ) {
-        let pty = LocalPTYProcess()
+        let session = HerdrTerminalControlProcess()
         let filter = self.colorFilter
-        let session = self.inMemorySession
-        pty.onOutput = { data in
+        let terminal = self.inMemorySession
+        session.onFrame = { data in
             let outputData = filter.transform(data: data)
             if !outputData.isEmpty {
-                session.receive(outputData)
+                terminal.receive(outputData)
             }
         }
-        pty.onExit = { [weak self] exitCode in
+        session.onExit = { [weak self, weak session] exitCode, diagnostic in
             Task { @MainActor in
+                if let session { TerminalSessionRegistry.shared.remove(session) }
                 guard let self else { return }
+                if !diagnostic.isEmpty, exitCode != 0 {
+                    self.inMemorySession.receive(Data("\r\n\(diagnostic)\r\n".utf8))
+                }
                 self.inMemorySession.finish(exitCode: UInt32(bitPattern: exitCode), runtimeMilliseconds: 0)
-                self.processDelegate?.processTerminated(source: self, exitCode: exitCode)
+                if let session {
+                    if self.terminalSession === session {
+                        self.terminalSession = nil
+                    }
+                }
+                self.controlDelegate?.processTerminated(source: self, exitCode: exitCode)
             }
         }
 
-        self.process = pty
+        self.terminalSession = session
         do {
-            try pty.start(
+            try session.attach(
                 executable: executable,
                 args: args,
-                environment: environment,
-                workingDirectory: workingDirectory
+                environment: environment
             )
+            TerminalSessionRegistry.shared.register(session)
         } catch {
-            NSLog("Failed to start LocalPTYProcess: \(error)")
-            self.process = nil
+            NSLog("Failed to start Herdr terminal session: \(error)")
+            self.terminalSession = nil
+            let message = error.localizedDescription
+            self.inMemorySession.receive(Data("\r\n\(message)\r\n".utf8))
             self.inMemorySession.finish(exitCode: 127, runtimeMilliseconds: 0)
-            self.processDelegate?.processTerminated(source: self, exitCode: 127)
+            self.onAttachmentError?(message)
+            self.controlDelegate?.processTerminated(source: self, exitCode: 127)
         }
     }
 
     func terminate(signal: Int32 = SIGHUP) {
-        process?.terminate(signal: signal)
-        process = nil
+        terminalSession?.detach(signal: signal)
+        terminalSession = nil
     }
 
     func send(txt: String) {
-        process?.send(Data(txt.utf8))
+        terminalSession?.send(Data(txt.utf8))
     }
 
     func send(source: Any?, data: ArraySlice<UInt8>) {
-        process?.send(Data(data))
+        terminalSession?.send(Data(data))
     }
 
     func feed(byteArray: ArraySlice<UInt8>) {
@@ -335,6 +350,43 @@ final class LineBreakTerminalView: AppTerminalView {
     private func terminalMousePoint(from event: NSEvent) -> (x: Double, y: Double) {
         let point = convert(event.locationInWindow, from: nil)
         return (Double(point.x), Double(bounds.height - point.y))
+    }
+
+    private var pendingRemoteScrollLines = 0.0
+
+    override func scrollWheel(with event: NSEvent) {
+        guard let terminalSession else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY
+        guard delta != 0 else { return }
+        // Trackpads report point deltas while mouse wheels report notches. Convert
+        // both into remote viewport lines and retain fractional trackpad movement.
+        pendingRemoteScrollLines += event.hasPreciseScrollingDeltas ? delta / 10 : delta * 3
+        let lines = Int(abs(pendingRemoteScrollLines))
+        guard lines > 0 else { return }
+        let direction = pendingRemoteScrollLines > 0 ? "up" : "down"
+        pendingRemoteScrollLines -= (pendingRemoteScrollLines > 0 ? 1 : -1) * Double(lines)
+        let point = terminalMousePoint(from: event)
+        let column = min(
+            max(Int(point.x / Double(max(bounds.width, 1)) * Double(terminalColumns)), 0),
+            terminalColumns - 1
+        )
+        let row = min(
+            max(Int(point.y / Double(max(bounds.height, 1)) * Double(terminalRows)), 0),
+            terminalRows - 1
+        )
+        let modifiers = Int(TerminalInputModifiers(from: event.modifierFlags).rawValue & 0x0F)
+        terminalSession.scroll(
+            direction: direction,
+            lines: lines,
+            source: "wheel",
+            column: column,
+            row: row,
+            modifiers: modifiers
+        )
     }
 
     func clearSelection(at point: (x: Double, y: Double)? = nil) {
@@ -436,6 +488,20 @@ final class LineBreakTerminalView: AppTerminalView {
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 && surface?.hasSelection() == true {
             clearSelection()
+        }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if let terminalSession,
+           modifiers.isEmpty,
+           (event.keyCode == 116 || event.keyCode == 121) {
+            terminalSession.scroll(
+                direction: event.keyCode == 116 ? "up" : "down",
+                lines: max(1, terminalRows - 1),
+                source: "page_key",
+                column: nil,
+                row: nil,
+                modifiers: 0
+            )
+            return
         }
         if !hasMarkedText(), let payload = ptyBytes(forMacEditingKey: event) {
             send(txt: payload)
@@ -636,7 +702,7 @@ final class LineBreakTerminalView: AppTerminalView {
             keyCode: 9
         ) else {
             let bytes: [UInt8] = [0x16]
-            process?.send(Data(bytes))
+            terminalSession?.send(Data(bytes))
             return
         }
         keyDown(with: controlV)
@@ -693,7 +759,7 @@ final class LineBreakTerminalView: AppTerminalView {
 
     private func sendPastedText(_ text: String) {
         if !paste(text: text) {
-            process?.send(Data(text.utf8))
+            terminalSession?.send(Data(text.utf8))
         }
     }
 
@@ -812,7 +878,7 @@ struct AttachTerminalView: NSViewRepresentable {
     var onAttachmentError: (String) -> Void = { _ in }
     var onAttachmentUploadingChanged: (Bool) -> Void = { _ in }
     var onExit: ((Int32?) -> Void)? = nil
-    var onViewReady: ((LocalProcessTerminalView) -> Void)? = nil
+    var onViewReady: ((EmbeddedTerminalView) -> Void)? = nil
 
     struct AppearanceKey: Equatable {
         let fontName: String
@@ -838,17 +904,17 @@ struct AttachTerminalView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeNSView(context: Context) -> LocalProcessTerminalView {
+    func makeNSView(context: Context) -> EmbeddedTerminalView {
         let view = LineBreakTerminalView()
         configurePasteHandling(view)
-        view.processDelegate = context.coordinator
+        view.controlDelegate = context.coordinator
         context.coordinator.onExit = onExit
         context.coordinator.lastAppearanceKey = currentAppearanceKey
         configureAppearance(view)
 
         let service = HerdrService(device: device)
         view.attachmentService = service
-        let command = service.attachCommand(target: target, serverVersion: serverVersion)
+        let command = service.terminalSessionControlCommand(target: target, serverVersion: serverVersion)
         var environment = ProcessInfo.processInfo.environment
         environment["TERM"] = "xterm-256color"
         environment["COLORTERM"] = "truecolor"
@@ -857,18 +923,18 @@ struct AttachTerminalView: NSViewRepresentable {
             environment[key] = value
         }
         context.coordinator.authorizationID = command.authorizationID
-        context.coordinator.scheduleAuthorizationCleanup()
-        view.startProcess(
+        view.startTerminalSession(
             executable: command.executable,
             args: command.args,
             environment: environment
         )
+        context.coordinator.scheduleAuthorizationCleanup()
         view.requestInitialFocus()
         onViewReady?(view)
         return view
     }
 
-    func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
+    func updateNSView(_ nsView: EmbeddedTerminalView, context: Context) {
         configurePasteHandling(nsView)
         context.coordinator.onExit = onExit
         let key = currentAppearanceKey
@@ -885,13 +951,13 @@ struct AttachTerminalView: NSViewRepresentable {
         view.onAttachmentUploadingChanged = onAttachmentUploadingChanged
     }
 
-    static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {
+    static func dismantleNSView(_ nsView: EmbeddedTerminalView, coordinator: Coordinator) {
         coordinator.onExit = nil
         coordinator.discardAuthorization()
         nsView.terminate(signal: SIGHUP)
     }
 
-    private func configureAppearance(_ view: LocalProcessTerminalView) {
+    private func configureAppearance(_ view: EmbeddedTerminalView) {
         applyTerminalAppearance(
             view,
             fontName: fontName,
@@ -904,7 +970,7 @@ struct AttachTerminalView: NSViewRepresentable {
         )
     }
 
-    final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
+    final class Coordinator: NSObject, TerminalControlViewDelegate {
         nonisolated(unsafe) var authorizationID: UUID?
         var onExit: ((Int32?) -> Void)?
         var lastAppearanceKey: AppearanceKey?
@@ -925,10 +991,10 @@ struct AttachTerminalView: NSViewRepresentable {
             self.authorizationID = nil
         }
 
-        func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
-        func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
-        func hostCurrentDirectoryUpdate(source: LocalProcessTerminalView, directory: String?) {}
-        func processTerminated(source: LocalProcessTerminalView, exitCode: Int32?) {
+        func sizeChanged(source: EmbeddedTerminalView, newCols: Int, newRows: Int) {}
+        func setTerminalTitle(source: EmbeddedTerminalView, title: String) {}
+        func hostCurrentDirectoryUpdate(source: EmbeddedTerminalView, directory: String?) {}
+        func processTerminated(source: EmbeddedTerminalView, exitCode: Int32?) {
             discardAuthorization()
             let callback = onExit
             onExit = nil
@@ -939,7 +1005,7 @@ struct AttachTerminalView: NSViewRepresentable {
 
 @MainActor
 func applyTerminalAppearance(
-    _ view: LocalProcessTerminalView,
+    _ view: EmbeddedTerminalView,
     fontName: String, fontSize: Double, thinStrokes: Bool,
     fontWeight: Double, lineSpacing: Double, theme: AppTheme, mouseReporting: Bool
 ) {
