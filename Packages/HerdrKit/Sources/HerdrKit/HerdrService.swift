@@ -6,7 +6,7 @@ public actor HerdrService {
     public let device: Device
     private var tunnel: SSHTunnel?
     private var rpc: SocketRPC?
-    /// nil for remote devices and when auto-start is off; remotes are the user's to run.
+    /// nil for remote devices and unless local auto-start is explicitly enabled.
     private let localServer: LocalHerdrServer?
     /// Auto-start is for a server that was never there, not for one that went away: see
     /// `ping(_:socketPath:)`.
@@ -14,7 +14,7 @@ public actor HerdrService {
 
     public static let minimumProtocolVersion = 17
 
-    public init(device: Device, autoStartLocalServer: Bool = true) {
+    public init(device: Device, autoStartLocalServer: Bool = false) {
         self.init(
             device: device,
             localServer: device.isLocal && autoStartLocalServer ? LocalHerdrServer() : nil
@@ -76,8 +76,8 @@ public actor HerdrService {
     /// Test seam: whether this service would start a local server at all.
     var autoStartsLocalServer: Bool { localServer != nil }
 
-    /// Pings; when the local server was never reachable in this session, starts it and pings
-    /// again, so the app boots without the user opening a terminal to run `herdr`.
+    /// Pings; if local auto-start was explicitly enabled and the server is down, starts it
+    /// only if it was never reachable in this session, then pings again.
     ///
     /// A server that already answered here and is gone now was stopped deliberately — by
     /// `herdr server stop`, or by the restart in the middle of `herdr update` — and bringing

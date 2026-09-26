@@ -404,16 +404,16 @@ final class LocalServerTests: XCTestCase {
 
     /// Asserted on the wiring rather than through `connect()`: a broken flag would otherwise
     /// spawn a real `herdr server` against the machine's own socket, not the test's.
-    func testAutoStartIsWiredOnlyForLocalDevicesThatAskedForIt() async {
+    func testLocalAutoStartIsExplicitOptIn() async {
         let local = Device(name: "Test", kind: .local, socketPath: socketPath)
         let remote = Device(name: "Remote", kind: .ssh(target: "nobody@example.invalid"))
 
         let byDefault = await HerdrService(device: local).autoStartsLocalServer
-        let turnedOff = await HerdrService(device: local, autoStartLocalServer: false).autoStartsLocalServer
+        let explicitlyEnabled = await HerdrService(device: local, autoStartLocalServer: true).autoStartsLocalServer
         let overSSH = await HerdrService(device: remote).autoStartsLocalServer
 
-        XCTAssertTrue(byDefault, "the app relies on the default being on")
-        XCTAssertFalse(turnedOff, "the flag did not turn auto-start off")
+        XCTAssertFalse(byDefault, "local services should only connect to an existing server by default")
+        XCTAssertTrue(explicitlyEnabled, "explicit local auto-start should remain available")
         XCTAssertFalse(overSSH, "remote servers are the user's to run")
     }
 
