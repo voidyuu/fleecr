@@ -7,6 +7,11 @@ a release without a section here fails CI.
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-09-26
+
+### Changed
+- Connect to an existing local Herdr server by default; local server auto-start is now opt-in.
+
 ## [1.0.5] - 2026-09-26
 
 ### Changed
