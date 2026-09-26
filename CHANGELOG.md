@@ -7,6 +7,12 @@ a release without a section here fails CI.
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-26
+
+### Changed
+- Removed the title bar frosted glass; the terminal no longer renders under the top bar.
+- Switched the license to PolyForm Noncommercial 1.0.0.
+
 ## [1.0.3] - 2026-09-25
 
 ### Changed

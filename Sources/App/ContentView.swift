@@ -118,14 +118,8 @@ struct DetailView: View {
     var body: some View {
         detailContent
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea(edges: .top)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .frame(height: TitlebarMetrics.height)
-                .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .bottom))
-                .allowsHitTesting(false)
-        }
+        // The background still bleeds under the transparent toolbar so the band
+        // reads as part of the pane; the terminal itself is inset below it.
         .background(terminalBackground.ignoresSafeArea())
         // AppKit owns the terminal and search toolbar items so + and search remain adjacent.
         .background(
@@ -152,7 +146,13 @@ struct DetailView: View {
     }
 
     private var detailContent: some View {
-        terminal.clipped()
+        // The terminal grid starts below the toolbar band. The detail pane's
+        // hosting controller has no safe area regions (see
+        // RootSplitViewController), so the inset has to be explicit — without
+        // it the first row renders under the + button and the search field.
+        terminal
+            .padding(.top, TitlebarMetrics.height)
+            .clipped()
     }
 
     // MARK: - Terminal
