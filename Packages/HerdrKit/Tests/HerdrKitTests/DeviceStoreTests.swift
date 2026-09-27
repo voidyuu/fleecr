@@ -150,51 +150,6 @@ final class DeviceStoreTests: XCTestCase {
         XCTAssertNil(store.loadSelectedProfile())
     }
 
-    // MARK: - Legacy Migration
-
-    func testDeviceStoreLegacyMigration() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("fleecr-test-mig-\(UUID().uuidString)")
-        let legacyDir = tempDir.appendingPathComponent("legacy")
-        try FileManager.default.createDirectory(at: legacyDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tempDir) }
-
-        // Write legacy devices.json
-        let legacyJson = """
-        [
-          {
-            "id": "00000000-0000-0000-0000-000000000001",
-            "name": "Local",
-            "kind": { "local": {} }
-          },
-          {
-            "id": "04B9206F-E711-4366-A496-B694094EF97C",
-            "name": "a6000",
-            "kind": { "ssh": { "target": "zy@navi.ts.net" } }
-          }
-        ]
-        """.data(using: .utf8)!
-        try legacyJson.write(to: legacyDir.appendingPathComponent("devices.json"))
-
-        let store = DeviceStore(directory: tempDir, legacyDirectory: legacyDir)
-        let loaded = store.load()
-
-        XCTAssertEqual(loaded.count, 2)
-        XCTAssertEqual(loaded[0], Device.local)
-        XCTAssertEqual(loaded[1].name, "a6000")
-        XCTAssertEqual(loaded[1].sshTarget, "zy@navi.ts.net")
-        XCTAssertEqual(loaded[1].session, "default")
-        XCTAssertTrue(loaded[1].isEnabled)
-
-        // Verify that endpoints.json was written in official format
-        XCTAssertTrue(FileManager.default.fileExists(atPath: store.endpointsURL.path))
-        let catalogData = try Data(contentsOf: store.endpointsURL)
-        let catalog = try JSONDecoder().decode(EndpointCatalog.self, from: catalogData)
-        XCTAssertEqual(catalog.ssh.count, 1)
-        XCTAssertEqual(catalog.ssh[0].label, "a6000")
-        XCTAssertEqual(catalog.ssh[0].target, "zy@navi.ts.net")
-    }
-
     // MARK: - SSHTunnel Socket Path
 
     func testSSHTunnelSocketPath() {
@@ -235,4 +190,3 @@ final class DeviceStoreTests: XCTestCase {
         XCTAssertNotNil(binary)
     }
 }
-

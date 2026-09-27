@@ -5,8 +5,18 @@ import SwiftUI
 extension AppModel {
     // MARK: - Store Reconciliation
 
-    func reconcileDevicesFromStore() {
-        let loaded = store.load()
+    func reconcileDevicesFromStore() async {
+        deviceListRefreshID += 1
+        let refreshID = deviceListRefreshID
+        let loaded: [Device]
+        do {
+            loaded = try await HerdrMachineCLI.list()
+        } catch {
+            guard refreshID == deviceListRefreshID else { return }
+            actionError = error.localizedDescription
+            return
+        }
+        guard refreshID == deviceListRefreshID else { return }
         guard loaded != devices else { return }
 
         let oldDevices = devices
@@ -81,7 +91,7 @@ extension AppModel {
             session: resolvedSession
         )
 
-        reconcileDevicesFromStore()
+        await reconcileDevicesFromStore()
     }
 
     func saveSSHPassword(_ password: String, for request: SSHAuthenticationRequest) {
@@ -148,7 +158,8 @@ extension AppModel {
                 session: session.isEmpty ? "default" : session
             )
             if !isEnabled {
-                if let updated = store.load().first(where: { $0.sshTarget == sshTarget }) {
+                let loaded = try await HerdrMachineCLI.list()
+                if let updated = loaded.first(where: { $0.sshTarget == sshTarget }) {
                     try? await HerdrMachineCLI.disable(profileID: updated.id.profileIDString)
                 }
             }
@@ -165,7 +176,7 @@ extension AppModel {
             }
         }
 
-        reconcileDevicesFromStore()
+        await reconcileDevicesFromStore()
     }
 
     func setDeviceEnabled(_ device: Device, enabled: Bool) {
@@ -176,9 +187,7 @@ extension AppModel {
             } else {
                 try? await HerdrMachineCLI.disable(profileID: device.id.profileIDString)
             }
-            await MainActor.run {
-                self.reconcileDevicesFromStore()
-            }
+            await self.reconcileDevicesFromStore()
         }
     }
 
@@ -188,21 +197,28 @@ extension AppModel {
 
     func removeDevice(_ device: Device) {
         guard !device.isLocal else { return }
-        removeSSHPassword(for: device.id)
-        if sshAuthenticationRequest?.deviceID == device.id { sshAuthenticationRequest = nil }
-        stopSession(device.id)
-        devices.removeAll { $0.id == device.id }
-        if selectedSpace?.deviceID == device.id {
-            selectedSpace = visibleSpaces.first(where: { $0.device.id != device.id })?.ref
-        }
-        if selectedPane?.deviceID == device.id {
-            selectedPane = preferredVisibleAgent()?.ref ?? firstVisiblePaneRef
-        }
         Task {
-            try? await HerdrMachineCLI.remove(profileID: device.id.profileIDString)
-            await MainActor.run {
-                self.reconcileDevicesFromStore()
+            do {
+                try await HerdrMachineCLI.remove(profileID: device.id.profileIDString)
+            } catch {
+                self.actionError = error.localizedDescription
+                await self.reconcileDevicesFromStore()
+                return
             }
+
+            self.removeSSHPassword(for: device.id)
+            if self.sshAuthenticationRequest?.deviceID == device.id {
+                self.sshAuthenticationRequest = nil
+            }
+            self.stopSession(device.id)
+            self.devices.removeAll { $0.id == device.id }
+            if self.selectedSpace?.deviceID == device.id {
+                self.selectedSpace = self.visibleSpaces.first(where: { $0.device.id != device.id })?.ref
+            }
+            if self.selectedPane?.deviceID == device.id {
+                self.selectedPane = self.preferredVisibleAgent()?.ref ?? self.firstVisiblePaneRef
+            }
+            await self.reconcileDevicesFromStore()
         }
     }
 

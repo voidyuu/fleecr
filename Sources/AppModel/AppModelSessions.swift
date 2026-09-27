@@ -10,8 +10,9 @@ extension AppModel {
         // Finder-launched apps have launchd's PATH. Capture the login +
         // interactive shell environment on a background thread once; terminal
         // attach reads the same snapshot.
-        Task.detached(priority: .utility) {
+        Task.detached(priority: .utility) { [weak self] in
             _ = await ShellEnvironment.ensure()
+            await self?.reconcileDevicesFromStore()
         }
         for device in devices {
             if device.isLocal || device.isEnabled {

@@ -247,7 +247,7 @@ public struct Device: Codable, Sendable, Identifiable, Equatable, Hashable {
     }
 }
 
-// MARK: - DeviceStore (Herdr 0.9 Official Catalog & Selection)
+// MARK: - DeviceStore (Catalog & Selection Compatibility)
 
 /// Persists the device list using the official Herdr 0.9 endpoints catalog
 /// (`~/.local/state/herdr/client/endpoints.json`) and selection file
@@ -258,7 +258,6 @@ public final class DeviceStore: @unchecked Sendable {
     public let directoryURL: URL
     public let endpointsURL: URL
     public let selectionURL: URL
-    public let legacyFileURL: URL
 
     private let queue = DispatchQueue(label: "cc.cassiel.fleecr.devices")
     private var directorySource: DispatchSourceFileSystemObject?
@@ -275,21 +274,12 @@ public final class DeviceStore: @unchecked Sendable {
             .appendingPathComponent(".local/state/herdr/client", isDirectory: true)
     }
 
-    public static var defaultLegacyDirectory: URL {
-        FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("HerdrM", isDirectory: true)
-    }
-
-    public init(directory: URL? = nil, legacyDirectory: URL? = nil) {
+    public init(directory: URL? = nil) {
         let base = directory ?? Self.defaultDirectory
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         self.directoryURL = base
         self.endpointsURL = base.appendingPathComponent("endpoints.json")
         self.selectionURL = base.appendingPathComponent("endpoint-selection.json")
-
-        let leg = legacyDirectory ?? Self.defaultLegacyDirectory
-        self.legacyFileURL = leg.appendingPathComponent("devices.json")
     }
 
     deinit {
@@ -306,27 +296,7 @@ public final class DeviceStore: @unchecked Sendable {
                 return list
             }
 
-            // 2. Migration fallback: legacy HerdrM devices.json
-            if let legacyData = try? Data(contentsOf: legacyFileURL),
-               let legacyDevices = try? JSONDecoder().decode([Device].self, from: legacyData),
-               !legacyDevices.isEmpty {
-                let nonLocal = legacyDevices.filter { !$0.isLocal }
-                if !nonLocal.isEmpty {
-                    // Migrate legacy devices to official Herdr endpoints.json
-                    let endpoints = nonLocal.compactMap { $0.toSavedSshEndpoint() }
-                    let catalog = EndpointCatalog(version: 1, ssh: endpoints)
-                    let encoder = JSONEncoder()
-                    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-                    if let data = try? encoder.encode(catalog) {
-                        try? data.write(to: endpointsURL, options: .atomic)
-                    }
-                    var list = endpoints.map { Device(endpoint: $0) }
-                    list.insert(.local, at: 0)
-                    return list
-                }
-            }
-
-            // 3. Fallback to Local device only
+            // Fallback to Local device only
             return [.local]
         }
     }
@@ -457,24 +427,31 @@ public final class DeviceStore: @unchecked Sendable {
 
 // MARK: - Official Herdr Machine CLI
 
+private struct HerdrMachineListEntry: Decodable {
+    let id: String
+    let label: String
+    let target: String
+    let session: String?
+    let enabled: Bool
+
+    func device() throws -> Device {
+        guard let uuid = UUID(profileID: id) else {
+            throw HerdrError.malformedResponse("machine list returned an invalid profile ID")
+        }
+        return Device(
+            id: uuid,
+            name: label,
+            kind: .ssh(target: target),
+            session: session ?? "default",
+            isEnabled: enabled
+        )
+    }
+}
+
 /// Invokes official `herdr machine` commands so all mutations go strictly through the official CLI.
 public enum HerdrMachineCLI {
     public static func resolveBinary() -> String? {
-        if let path = (ShellEnvironment.cached ?? .empty).findExecutable("herdr") {
-            return path
-        }
-        let candidates = [
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin/herdr").path,
-            "/usr/local/bin/herdr",
-            "/opt/homebrew/bin/herdr",
-            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".cargo/bin/herdr").path,
-        ]
-        for candidate in candidates {
-            if FileManager.default.isExecutableFile(atPath: candidate) {
-                return candidate
-            }
-        }
-        return nil
+        LocalHerdrServer.resolveBinary()
     }
 
     public static func runCommand(
@@ -535,6 +512,22 @@ public enum HerdrMachineCLI {
         }
     }
 
+    /// Loads SSH machines from Herdr's supported JSON CLI interface.
+    public static func list() async throws -> [Device] {
+        let output = try await runCommand(args: ["machine", "list", "--json"])
+        do {
+            let entries = try JSONDecoder().decode(
+                [HerdrMachineListEntry].self,
+                from: Data(output.utf8)
+            )
+            return [Device.local] + (try entries.map { try $0.device() })
+        } catch let error as HerdrError {
+            throw error
+        } catch {
+            throw HerdrError.malformedResponse("invalid `herdr machine list --json` output: \(error.localizedDescription)")
+        }
+    }
+
     /// Prepares the remote Herdr server and saves an SSH machine using `herdr machine add`.
     public static func add(
         target: String,
@@ -568,5 +561,3 @@ public enum HerdrMachineCLI {
         _ = try await runCommand(args: ["machine", "disable", profileID])
     }
 }
-
-

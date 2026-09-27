@@ -73,20 +73,20 @@ final class AppModel: ObservableObject {
     var cwdPollTasks: [UUID: Task<Void, Never>] = [:]
     var refreshDebounces: [UUID: Task<Void, Never>] = [:]
     var previousStatuses: [UUID: [String: AgentStatus]] = [:]
+    var deviceListRefreshID = 0
 
     func replaceUnreadAgents(with agents: Set<AgentUnreadKey>) {
         unreadAgents = agents
     }
 
     init() {
-        let loaded = store.load()
-        devices = loaded
+        devices = [.local]
         // Clear any legacy persisted device filter so the app is always in All Devices mode.
         UserDefaults.standard.removeObject(forKey: "device.filter")
 
         store.startMonitoring { [weak self] in
             Task { @MainActor [weak self] in
-                self?.reconcileDevicesFromStore()
+                await self?.reconcileDevicesFromStore()
             }
         }
     }
