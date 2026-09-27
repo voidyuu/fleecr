@@ -75,11 +75,21 @@ extension AppModel {
 
     func requestClosePane(_ ref: PaneRef, name: String) {
         guard let device = device(ref.deviceID) else { return }
+        let wasSelected = selectedPane == ref
+        let tabs = allVisibleTabPaneRefs
+        let selectionCandidates = tabs.firstIndex(of: ref).map { index in
+            Array(tabs.dropFirst(index + 1)) + Array(tabs.prefix(index).reversed())
+        } ?? []
         Task {
             do {
                 try await self.service(for: device).closePane(paneID: ref.paneID)
+                let shouldSelectNext = wasSelected && (self.selectedPane == ref || self.selectedPane == nil)
                 if self.selectedPane == ref { self.selectedPane = nil }
                 await self.refresh(device.id)
+                if shouldSelectNext, self.selectedPane == nil {
+                    let remaining = self.allVisibleTabPaneRefs.filter { $0 != ref }
+                    self.selectedPane = selectionCandidates.first { remaining.contains($0) } ?? remaining.last
+                }
             } catch {
                 self.actionError = self.actionErrorMessage(error, device: device)
             }
