@@ -7,6 +7,14 @@ a release without a section here fails CI.
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-09-27
+
+### Changed
+- Read the device list through `herdr machine list --json`.
+
+### Fixed
+- Select a neighboring tab after closing a pane.
+
 ## [1.0.6] - 2026-09-26
 
 ### Changed
