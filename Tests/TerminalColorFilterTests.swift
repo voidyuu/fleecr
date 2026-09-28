@@ -1,6 +1,36 @@
 import XCTest
 @testable import fleecr
 
+final class TerminalCJKFontTests: XCTestCase {
+    func testMapPinsHanWhenThePrimaryFaceHasNone() {
+        let lines = TerminalCJKFont.mapValues(primaryFontName: "Menlo", languages: ["zh-Hans"])
+        guard TerminalCJKFont.familyInstalled("PingFang SC") else {
+            XCTAssertTrue(lines.isEmpty)
+            return
+        }
+        XCTAssertEqual(lines.count, TerminalCJKFont.ranges.count)
+        XCTAssertTrue(lines.contains("U+3000-U+303F=PingFang SC"))
+        XCTAssertTrue(lines.contains("U+4E00-U+9FFF=PingFang SC"))
+        XCTAssertTrue(lines.allSatisfy { $0.hasSuffix("=PingFang SC") })
+    }
+
+    func testMapFollowsTraditionalAndJapanesePreferences() {
+        if TerminalCJKFont.familyInstalled("PingFang TC") {
+            let lines = TerminalCJKFont.mapValues(primaryFontName: "Menlo", languages: ["zh-Hant"])
+            XCTAssertTrue(lines.contains("U+3000-U+303F=PingFang TC"))
+        }
+        if TerminalCJKFont.familyInstalled("Hiragino Sans") {
+            let lines = TerminalCJKFont.mapValues(primaryFontName: "", languages: ["ja"])
+            XCTAssertTrue(lines.contains("U+4E00-U+9FFF=Hiragino Sans"))
+        }
+    }
+
+    func testMapLeavesAFaceThatAlreadyDrawsHan() {
+        guard TerminalCJKFont.primaryCoversHan("PingFangSC-Regular") else { return }
+        XCTAssertTrue(TerminalCJKFont.mapValues(primaryFontName: "PingFangSC-Regular").isEmpty)
+    }
+}
+
 final class TerminalFrameBytesTests: XCTestCase {
     func testFrameDisablesAutowrapBeforeBlit() {
         let frame = Data("\u{1B}[?2026h\u{1B}[1;1H".utf8)

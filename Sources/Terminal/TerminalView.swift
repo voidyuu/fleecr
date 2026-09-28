@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import GhosttyKit
 import GhosttyTerminal
 import HerdrKit
@@ -104,6 +105,68 @@ enum TerminalDefaults {
             guard let font = NSFont(name: family, size: 12) else { return false }
             return font.isFixedPitch
         }.sorted()
+    }
+}
+
+/// Ghostty asks CoreText for a face the first time a codepoint is missing,
+/// then keeps that answer for the life of the surface. The face it returns
+/// sometimes cannot shape U+3002, so the ideographic full stop is drawn at
+/// the top of the cell. A new tab builds a new grid and usually lands on
+/// PingFang, which is why switching tabs clears it. These maps name an
+/// installed CJK face up front and skip that lookup.
+enum TerminalCJKFont {
+    /// Blocks that carry Han and the punctuation that shares its face
+    /// (ideographic full stop, fullwidth comma, and the rest of FF00).
+    static let ranges = [
+        "U+2E80-U+2FDF",
+        "U+3000-U+303F",
+        "U+31C0-U+31EF",
+        "U+3400-U+4DBF",
+        "U+4E00-U+9FFF",
+        "U+F900-U+FAFF",
+        "U+FF00-U+FFEF",
+    ]
+
+    static func preferredFamily(languages: [String] = Locale.preferredLanguages) -> String? {
+        let lang = languages.first ?? ""
+        let candidates: [String]
+        if lang.hasPrefix("zh-Hant") || lang.hasPrefix("zh-TW") || lang.hasPrefix("zh-HK") || lang.hasPrefix("zh-MO") {
+            candidates = (lang.hasPrefix("zh-HK") || lang.hasPrefix("zh-MO"))
+                ? ["PingFang HK", "PingFang TC", "PingFang SC"]
+                : ["PingFang TC", "PingFang HK", "PingFang SC"]
+        } else if lang.hasPrefix("ja") {
+            candidates = ["Hiragino Sans", "PingFang SC", "PingFang TC"]
+        } else if lang.hasPrefix("ko") {
+            candidates = ["Apple SD Gothic Neo", "PingFang SC"]
+        } else {
+            candidates = ["PingFang SC", "PingFang TC", "PingFang HK", "Hiragino Sans"]
+        }
+        return candidates.first(where: familyInstalled)
+    }
+
+    static func familyInstalled(_ name: String) -> Bool {
+        NSFontManager.shared.availableMembers(ofFontFamily: name) != nil
+    }
+
+    /// `true` when the face itself has Han. Cascade fallback does not count:
+    /// that is the lookup this map exists to avoid.
+    static func primaryCoversHan(_ fontName: String) -> Bool {
+        let font: NSFont? = fontName.isEmpty
+            ? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+            : NSFont(name: fontName, size: 12)
+        guard let font else { return false }
+        var characters: [UniChar] = [0x4E2D]
+        var glyphs = [CGGlyph](repeating: 0, count: 1)
+        return CTFontGetGlyphsForCharacters(font, &characters, &glyphs, 1) && glyphs[0] != 0
+    }
+
+    /// `font-codepoint-map` values. Empty when the primary face already draws
+    /// Han, or when this Mac has none of the candidate faces.
+    static func mapValues(primaryFontName: String, languages: [String] = Locale.preferredLanguages) -> [String] {
+        guard !primaryCoversHan(primaryFontName), let family = preferredFamily(languages: languages) else {
+            return []
+        }
+        return ranges.map { "\($0)=\(family)" }
     }
 }
 
@@ -969,6 +1032,9 @@ func applyTerminalAppearance(
     let config = TerminalConfiguration { builder in
         if !fontName.isEmpty {
             builder.withFontFamily(fontName)
+        }
+        for value in TerminalCJKFont.mapValues(primaryFontName: fontName) {
+            builder.withCustom("font-codepoint-map", value)
         }
         builder.withFontSize(Float(fontSize))
         builder.withFontThicken(!thinStrokes)
