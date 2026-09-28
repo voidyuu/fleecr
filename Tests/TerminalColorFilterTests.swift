@@ -1,6 +1,16 @@
 import XCTest
 @testable import fleecr
 
+final class TerminalFrameBytesTests: XCTestCase {
+    func testFrameDisablesAutowrapBeforeBlit() {
+        let frame = Data("\u{1B}[?2026h\u{1B}[1;1H".utf8)
+        let payload = TerminalFrameBytes.payload(frame: frame)
+
+        XCTAssertEqual(payload.prefix(5), Data([0x1B, 0x5B, 0x3F, 0x37, 0x6C]))
+        XCTAssertEqual(Data(payload.dropFirst(5)), frame)
+    }
+}
+
 final class TerminalColorFilterTests: XCTestCase {
     func testTruecolorLightTheme() {
         var adapter = LightTerminalANSIAdapter()

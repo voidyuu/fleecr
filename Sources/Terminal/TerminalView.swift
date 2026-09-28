@@ -141,6 +141,36 @@ protocol TerminalControlViewDelegate: AnyObject {
 
 typealias EmbeddedTerminalView = LineBreakTerminalView
 
+/// Bytes wrapped around one Herdr terminal frame before it is parsed.
+enum TerminalFrameBytes {
+    /// DECAWM off (`CSI ? 7 l`). Herdr's blit fills every column and only
+    /// stays aligned when the host does not soft-wrap that last cell.
+    static let disableAutowrap = Data([0x1B, 0x5B, 0x3F, 0x37, 0x6C])
+
+    static func payload(frame: Data) -> Data {
+        var payload = disableAutowrap
+        payload.append(frame)
+        return payload
+    }
+}
+
+private final class TerminalViewportBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: InMemoryTerminalViewport?
+
+    func store(_ viewport: InMemoryTerminalViewport) {
+        lock.lock()
+        value = viewport
+        lock.unlock()
+    }
+
+    func load() -> InMemoryTerminalViewport? {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
 final class TerminalOutputColorFilter: @unchecked Sendable {
     private let lock = NSLock()
     private var _usesLightColors = false
@@ -191,6 +221,7 @@ final class LineBreakTerminalView: AppTerminalView {
     var bracketedPasteMode = false
     private var terminalColumns = 80
     private var terminalRows = 24
+    private var viewportBox = TerminalViewportBox()
 
     weak var controlDelegate: TerminalControlViewDelegate?
 
@@ -216,6 +247,7 @@ final class LineBreakTerminalView: AppTerminalView {
     convenience init() {
         weak var weakSelf: LineBreakTerminalView?
 
+        let viewportBox = TerminalViewportBox()
         let session = InMemoryTerminalSession(
             write: { data in
                 Task { @MainActor in
@@ -224,6 +256,10 @@ final class LineBreakTerminalView: AppTerminalView {
                 }
             },
             resize: { viewport in
+                // Remember the size before hopping to the main actor. The
+                // control process may not exist yet, and that task is the
+                // only other sender; startTerminalSession replays this.
+                viewportBox.store(viewport)
                 Task { @MainActor in
                     weakSelf?.terminalSession?.resize(viewport)
                     if let ws = weakSelf {
@@ -237,6 +273,7 @@ final class LineBreakTerminalView: AppTerminalView {
 
         let controller = TerminalController()
         self.init(controller: controller, session: session)
+        self.viewportBox = viewportBox
         weakSelf = self
     }
 
@@ -285,9 +322,7 @@ final class LineBreakTerminalView: AppTerminalView {
         let terminal = self.inMemorySession
         session.onFrame = { data in
             let outputData = filter.transform(data: data)
-            if !outputData.isEmpty {
-                terminal.receive(outputData)
-            }
+            terminal.receive(TerminalFrameBytes.payload(frame: outputData))
         }
         session.onExit = { [weak self, weak session] exitCode, diagnostic in
             Task { @MainActor in
@@ -314,6 +349,12 @@ final class LineBreakTerminalView: AppTerminalView {
                 environment: environment
             )
             TerminalSessionRegistry.shared.register(session)
+            // The surface often reports its real grid before this process
+            // exists. Herdr otherwise keeps painting the 80×24 attach size
+            // into a taller view.
+            if let viewport = viewportBox.load() {
+                session.resize(viewport)
+            }
         } catch {
             NSLog("Failed to start Herdr terminal session: \(error)")
             self.terminalSession = nil
