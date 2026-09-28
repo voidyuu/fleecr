@@ -7,6 +7,11 @@ a release without a section here fails CI.
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-09-29
+
+### Fixed
+- Keep Herdr terminal frames from soft-wrapping into the next row.
+
 ## [1.0.7] - 2026-09-27
 
 ### Changed
