@@ -32,12 +32,131 @@ final class TerminalCJKFontTests: XCTestCase {
 }
 
 final class TerminalFrameBytesTests: XCTestCase {
-    func testFrameDisablesAutowrapBeforeBlit() {
+    func testFrameResetsHostModesBeforeBlit() {
         let frame = Data("\u{1B}[?2026h\u{1B}[1;1H".utf8)
         let payload = TerminalFrameBytes.payload(frame: frame)
+        let prelude = Data(payload.dropLast(frame.count))
 
-        XCTAssertEqual(payload.prefix(5), Data([0x1B, 0x5B, 0x3F, 0x37, 0x6C]))
-        XCTAssertEqual(Data(payload.dropFirst(5)), frame)
+        XCTAssertFalse(prelude.contains(Data([0x1B, 0x63])))
+        XCTAssertTrue(prelude.contains(Data("\u{1B}[?1049l".utf8)))
+        XCTAssertTrue(prelude.contains(Data("\u{1B}[r".utf8)))
+        XCTAssertTrue(prelude.contains(Data("\u{1B}[?7l".utf8)))
+        XCTAssertTrue(prelude.contains(Data("\u{1B}[?25h".utf8)))
+        XCTAssertEqual(Data(payload.suffix(frame.count)), frame)
+    }
+
+    func testFrameDropsModesThatWouldUndoTheReset() {
+        let frame = Data("\u{1B}[?7h\u{1B}[?1049h\u{1B}[2;23r\u{1B}[1;1Hkeep\u{1B}[?25l".utf8)
+        let payload = TerminalFrameBytes.payload(frame: frame)
+        let replayed = Data(payload.dropFirst(TerminalFrameBytes.reset.count))
+
+        XCTAssertFalse(replayed.contains(Data("\u{1B}[?7h".utf8)))
+        XCTAssertFalse(replayed.contains(Data("\u{1B}[?1049h".utf8)))
+        XCTAssertFalse(replayed.contains(Data("\u{1B}[2;23r".utf8)))
+        XCTAssertTrue(replayed.contains(Data("\u{1B}[1;1Hkeep".utf8)))
+        XCTAssertTrue(replayed.contains(Data("\u{1B}[?25l".utf8)))
+    }
+
+    func testCombinedPrivateModeKeepsTheOtherModes() {
+        let frame = Data("\u{1B}[?25;1049h\u{1B}[?1000;1049l\u{1B}[1;1Hkeep".utf8)
+        let replayed = TerminalFrameBytes.sanitize(frame)
+
+        XCTAssertFalse(replayed.contains(Data("1049".utf8)))
+        XCTAssertTrue(replayed.contains(Data("\u{1B}[?25h".utf8)))
+        XCTAssertTrue(replayed.contains(Data("\u{1B}[?1000l".utf8)))
+        XCTAssertTrue(replayed.contains(Data("\u{1B}[1;1Hkeep".utf8)))
+    }
+
+    func testSanitizeDropsAltScreenSaveAndRestore() {
+        let frame = Data("\u{1B}[?1049s\u{1B}[?47u\u{1B}[?47hkeep".utf8)
+        let replayed = TerminalFrameBytes.sanitize(frame)
+
+        XCTAssertEqual(replayed, Data("keep".utf8))
+    }
+
+    func testSanitizeDropsC1AltScreenButKeepsOtherC1() {
+        var frame = Data([0x9B, 0x3F, 0x31, 0x30, 0x34, 0x39, 0x68])
+        frame.append(Data("keep".utf8))
+        frame.append(Data([0x9B, 0x31, 0x3B, 0x31, 0x48]))
+
+        XCTAssertEqual(TerminalFrameBytes.sanitize(frame), Data("keep".utf8) + Data([0x9B, 0x31, 0x3B, 0x31, 0x48]))
+    }
+
+    func testSanitizeKeepsCursorRestoreAndDropsOnlyScrollRegions() {
+        let frame = Data("\u{1B}[r\u{1B}[2;23r\u{1B}[u\u{1B}[?25r".utf8)
+        let replayed = TerminalFrameBytes.sanitize(frame)
+
+        XCTAssertFalse(replayed.contains(Data("\u{1B}[2;23r".utf8)))
+        XCTAssertEqual(replayed, Data("\u{1B}[r\u{1B}[u\u{1B}[?25r".utf8))
+    }
+
+    func testSanitizeCopiesStringSequencesWhole() {
+        let frame = Data("\u{1B}]0;report?7h\u{0007}\u{1B}]8;;https://h.example\u{1B}\\keep".utf8)
+        XCTAssertEqual(TerminalFrameBytes.sanitize(frame), frame)
+    }
+
+    func testSanitizeKeepsAnUnterminatedSequenceIntact() {
+        let frame = Data("keep\u{1B}[?7".utf8)
+        XCTAssertEqual(TerminalFrameBytes.sanitize(frame), frame)
+    }
+
+    func testSanitizeIgnoresAModeNumberPastFourDigits() {
+        let frame = Data("\u{1B}[?00001049h\u{1B}[1;1Hkeep".utf8)
+        let replayed = TerminalFrameBytes.sanitize(frame)
+
+        XCTAssertTrue(replayed.contains(Data("\u{1B}[?00001049h".utf8)))
+        XCTAssertTrue(replayed.contains(Data("\u{1B}[1;1Hkeep".utf8)))
+    }
+
+    func testResetClearsTheVisibleScreenWithoutErasingScrollback() {
+        XCTAssertTrue(TerminalFrameBytes.reset.contains(Data("\u{1B}[H\u{1B}[2J".utf8)))
+        XCTAssertFalse(TerminalFrameBytes.reset.contains(Data([0x1B, 0x63])))
+    }
+
+    func testSanitizeDropsLeadingZeroesSpacesAndColonParameters() {
+        let frame = Data("\u{1B}[?007h\u{1B}[?25:1049h\u{1B}[;23r\u{1B}[2;r\u{1B}[1;1Hkeep".utf8)
+        let replayed = TerminalFrameBytes.sanitize(frame)
+
+        XCTAssertFalse(replayed.contains(Data("\u{1B}[?007h".utf8)))
+        XCTAssertFalse(replayed.contains(Data("1049".utf8)))
+        XCTAssertFalse(replayed.contains(Data("\u{1B}[;23r".utf8)))
+        XCTAssertFalse(replayed.contains(Data("\u{1B}[2;r".utf8)))
+        XCTAssertTrue(replayed.contains(Data("\u{1B}[?25h".utf8)))
+        XCTAssertTrue(replayed.contains(Data("\u{1B}[1;1Hkeep".utf8)))
+    }
+}
+
+final class PendingTerminalFramesTests: XCTestCase {
+    func testOnlyTheNewestFrameIsKeptUntilTheGridSettles() {
+        let pending = PendingTerminalFrames()
+        XCTAssertFalse(pending.accept(Data("first".utf8)))
+        XCTAssertFalse(pending.accept(Data("second".utf8)))
+
+        let generation = pending.gridWillChange()
+        XCTAssertEqual(pending.takeSettled(generation), Data("second".utf8))
+        XCTAssertNil(pending.takeSettled(generation))
+        XCTAssertTrue(pending.accept(Data("live".utf8)))
+    }
+
+    func testALaterResizeKeepsTheFrameForTheFinalSize() {
+        let pending = PendingTerminalFrames()
+        XCTAssertFalse(pending.accept(Data("held".utf8)))
+        let first = pending.gridWillChange()
+        let last = pending.gridWillChange()
+
+        XCTAssertNil(pending.takeSettled(first))
+        XCTAssertEqual(pending.takeSettled(last), Data("held".utf8))
+    }
+
+    func testAResizeHoldsFramesAgainUntilItSettles() {
+        let pending = PendingTerminalFrames()
+        let generation = pending.gridWillChange()
+        XCTAssertNil(pending.takeSettled(generation))
+        XCTAssertTrue(pending.accept(Data("live".utf8)))
+
+        let next = pending.gridWillChange()
+        XCTAssertFalse(pending.accept(Data("during drag".utf8)))
+        XCTAssertEqual(pending.takeSettled(next), Data("during drag".utf8))
     }
 }
 
