@@ -206,253 +206,14 @@ typealias EmbeddedTerminalView = LineBreakTerminalView
 
 /// Bytes wrapped around one Herdr terminal frame before it is parsed.
 enum TerminalFrameBytes {
-    /// Leave the alt screen, reset the scroll region, turn autowrap off, show
-    /// the cursor, and erase the visible screen.
-    ///
-    /// A fullscreen TUI leaves the alt screen, scroll region, and autowrap on.
-    /// The next blit is a full grid painted from a known origin, so none of
-    /// that may survive. RIS (`ESC c`) is not used: it discards scrollback, so
-    /// a transcript could not be scrolled back to. Each state is repaired on
-    /// its own instead. `CSI ? 1049 l` returns to the primary screen without
-    /// copying the alt screen into scrollback, `CSI r` restores the whole-grid
-    /// scroll region, and `CSI H` then `CSI 2 J` erases the visible screen
-    /// without touching history.
-    static let reset = Data([
-        0x1B, 0x5B, 0x3F, 0x31, 0x30, 0x34, 0x39, 0x6C,
-        0x1B, 0x5B, 0x72,
-        0x1B, 0x5B, 0x3F, 0x37, 0x6C,
-        0x1B, 0x5B, 0x3F, 0x32, 0x35, 0x68,
-        0x1B, 0x5B, 0x48,
-        0x1B, 0x5B, 0x32, 0x4A,
-    ])
+    /// DECAWM off (`CSI ? 7 l`). Herdr's blit fills every column and only
+    /// stays aligned when the host does not soft-wrap that last cell.
+    static let disableAutowrap = Data([0x1B, 0x5B, 0x3F, 0x37, 0x6C])
 
     static func payload(frame: Data) -> Data {
-        var payload = reset
-        payload.append(sanitize(frame))
+        var payload = disableAutowrap
+        payload.append(frame)
         return payload
-    }
-
-    /// Drops mode changes that would undo the reset: autowrap, alt screen,
-    /// and scroll region. Cursor motion, erasure, color, and sync updates stay.
-    ///
-    /// A combined sequence keeps the parameters that are not dropped, so
-    /// `CSI ? 25 ; 1049 h` survives as `CSI ? 25 h` instead of taking the
-    /// cursor mode with it. An OSC, DCS, or other string is copied whole:
-    /// its payload can contain the bytes that end a CSI.
-    static func sanitize(_ frame: Data) -> Data {
-        var output = Data()
-        output.reserveCapacity(frame.count)
-        var index = frame.startIndex
-        while index < frame.endIndex {
-            let byte = frame[index]
-            let isC1CSI = byte == 0x9B
-            guard byte == 0x1B || isC1CSI else {
-                output.append(byte)
-                index = frame.index(after: index)
-                continue
-            }
-            let next = frame.index(after: index)
-            guard next < frame.endIndex else {
-                output.append(contentsOf: frame[index...])
-                break
-            }
-            // ESC \ is the string terminator. It must not be read as an
-            // introducer, or the payload scan below would swallow the tail.
-            if !isC1CSI, frame[next] == 0x5C {
-                output.append(frame[index])
-                index = next
-                continue
-            }
-            if !isC1CSI, let stringEnd = endOfStringSequence(frame, at: index) {
-                output.append(contentsOf: frame[index..<stringEnd])
-                index = stringEnd
-                continue
-            }
-            guard isC1CSI || frame[next] == 0x5B else {
-                output.append(frame[index])
-                index = next
-                continue
-            }
-            let bodyStart = isC1CSI ? next : frame.index(after: next)
-            var end = bodyStart
-            while end < frame.endIndex, !(0x40...0x7E).contains(frame[end]) {
-                end = frame.index(after: end)
-            }
-            // No final byte yet. The next record is its own frame and cannot
-            // finish this one, so the tail has to be copied whole; resuming at
-            // '[' would print the parameter bytes as text.
-            guard end < frame.endIndex else {
-                output.append(contentsOf: frame[index...])
-                break
-            }
-            if let kept = keptCSI(frame[index...end]) {
-                output.append(contentsOf: kept)
-            }
-            index = frame.index(after: end)
-        }
-        return output
-    }
-
-    /// End of an ESC-introduced string (OSC, DCS, SOS, PM, APC), or nil when
-    /// the introducer is not one of those. The scan stops at BEL or ST and
-    /// never treats a payload byte as a CSI final.
-    private static func endOfStringSequence(_ frame: Data, at index: Data.Index) -> Data.Index? {
-        let next = frame.index(after: index)
-        guard next < frame.endIndex else { return nil }
-        let introducer = frame[next]
-        guard introducer == 0x5D || introducer == 0x50 || introducer == 0x58
-            || introducer == 0x5E || introducer == 0x5F
-        else { return nil }
-        var cursor = frame.index(after: next)
-        while cursor < frame.endIndex {
-            let byte = frame[cursor]
-            let after = frame.index(after: cursor)
-            if byte == 0x07 { return after }
-            if byte == 0x1B, after < frame.endIndex, frame[after] == 0x5C {
-                return frame.index(after: after)
-            }
-            if byte == 0x9C { return after }
-            cursor = after
-        }
-        return frame.endIndex
-    }
-
-    /// The CSI to keep, or nil when the whole sequence only set dropped modes.
-    /// A combined private-mode sequence is rebuilt from the parameters that
-    /// are not autowrap or an alt-screen mode.
-    private static func keptCSI(_ sequence: Data.SubSequence) -> [UInt8]? {
-        let bytes = Array(sequence)
-        guard bytes.count >= 2 else { return bytes }
-        let c1 = bytes[0] == 0x9B
-        guard c1 || (bytes[0] == 0x1B && bytes[1] == 0x5B) else { return bytes }
-        let final = bytes[bytes.count - 1]
-        let bodyStart = c1 ? 1 : 2
-        guard bodyStart <= bytes.count - 1 else { return bytes }
-        let body = bytes[bodyStart..<bytes.count - 1]
-
-        if final == 0x72 {
-            return isScrollRegion(body) ? nil : bytes
-        }
-        // SM/RM (`h`/`l`) and the private save/restore forms (`s`/`u`) that
-        // switch the same alt-screen modes.
-        guard final == 0x68 || final == 0x6C || final == 0x73 || final == 0x75 else {
-            return bytes
-        }
-        let privateMode = body.first == 0x3F
-        let parameters = privateMode ? body.dropFirst() : body
-        var kept: [[UInt8]] = []
-        var dropped = false
-        // ECMA-48 treats `;` and `:` as separators and allows spaces around a
-        // parameter, so both have to be split on or the combined form
-        // `CSI ? 25:1049 h` would survive whole.
-        for parameter in parameters.split(whereSeparator: { $0 == 0x3B || $0 == 0x3A }) {
-            if privateMode, isDroppedMode(parameter) {
-                dropped = true
-            } else {
-                kept.append(Array(parameter).filter { $0 != 0x20 })
-            }
-        }
-        guard dropped else { return bytes }
-        guard !kept.isEmpty else { return nil }
-
-        var rebuilt: [UInt8] = c1 ? [0x9B] : [0x1B, 0x5B]
-        if privateMode { rebuilt.append(0x3F) }
-        for (offset, parameter) in kept.enumerated() {
-            if offset > 0 { rebuilt.append(0x3B) }
-            rebuilt.append(contentsOf: parameter)
-        }
-        rebuilt.append(final)
-        return rebuilt
-    }
-
-    /// DECSTBM is two optional numbers around one semicolon. Either margin may
-    /// be defaulted (`CSI ;23 r`, `CSI 2; r`), and both defaulted (`CSI r`)
-    /// is the reset itself, so it is kept. Anything else ending in `r` — a
-    /// cursor restore, a private sequence — is left alone.
-    private static func isScrollRegion<S: Sequence>(_ body: S) -> Bool where S.Element == UInt8 {
-        let bytes = Array(body).filter { $0 != 0x20 }
-        guard let split = bytes.firstIndex(of: 0x3B), bytes.filter({ $0 == 0x3B }).count == 1 else {
-            return false
-        }
-        let top = bytes[..<split]
-        let bottom = bytes[(split + 1)...]
-        return isDigits(top, allowEmpty: true) && isDigits(bottom, allowEmpty: true)
-            && !(top.isEmpty && bottom.isEmpty)
-    }
-
-    private static func isDigits<S: Sequence>(
-        _ bytes: S,
-        allowEmpty: Bool = false
-    ) -> Bool where S.Element == UInt8 {
-        let bytes = Array(bytes)
-        return (allowEmpty || !bytes.isEmpty) && bytes.allSatisfy { (0x30...0x39).contains($0) }
-    }
-
-    /// Autowrap (7) and the three alt-screen modes (47, 1047, 1049). Leading
-    /// zeroes are insignificant, so the parameter is read as a number rather
-    /// than compared byte for byte. A run longer than these modes is rejected
-    /// before the multiplication, so it can neither trap nor wrap around to a
-    /// value that looks like one of them.
-    private static func isDroppedMode<S: Sequence>(_ parameter: S) -> Bool where S.Element == UInt8 {
-        let digits = Array(parameter).filter { $0 != 0x20 }
-        guard digits.count <= 4, isDigits(digits) else { return false }
-        let value = digits.reduce(0) { $0 * 10 + Int($1 - 0x30) }
-        return value == 7 || value == 47 || value == 1047 || value == 1049
-    }
-}
-
-/// Frames seen while the grid is still changing size. The reader thread and
-/// the main thread both touch it, so the bytes and the generation stay behind
-/// one lock. Only the newest frame is kept: each one is a full grid, and
-/// replaying the older ones would paint stale fullscreen states before the
-/// current one.
-///
-/// Nothing here decides that the grid has settled. The view bumps the
-/// generation on every resize and draws whatever `takeSettled()` returns once
-/// one generation has stayed current. A one-shot latch cannot do this: the
-/// resize that carries the final size is not the first one.
-final class PendingTerminalFrames: @unchecked Sendable {
-    private let lock = NSLock()
-    private var generation = 0
-    private var holding = true
-    private var held: Data?
-
-    /// Returns whether the frame should be parsed now. While a resize is
-    /// unsettled it is kept instead, replacing whatever was held before it.
-    /// A frame that arrives once the grid has settled is parsed immediately,
-    /// so it cannot replace the frame a settle wait is about to draw.
-    func accept(_ frame: Data) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard holding else { return true }
-        held = frame
-        return false
-    }
-
-    /// Records that another resize was dispatched and returns its generation.
-    /// A frame that arrives after this is held again, because it was drawn for
-    /// a grid that is about to change.
-    func gridWillChange() -> Int {
-        lock.lock()
-        defer { lock.unlock() }
-        generation += 1
-        holding = true
-        return generation
-    }
-
-    /// The held frame, if `generation` is still the one recorded when the
-    /// resize was dispatched. A later resize returns nil and the frame stays
-    /// held for it. Settling and taking the frame happen together, so a frame
-    /// that arrives at the same moment is either held for the next resize or
-    /// parsed by the reader — never dropped between the two.
-    func takeSettled(_ generation: Int) -> Data? {
-        lock.lock()
-        defer { lock.unlock() }
-        guard self.generation == generation, generation > 0 else { return nil }
-        let held = self.held
-        self.held = nil
-        holding = false
-        return held
     }
 }
 
@@ -523,11 +284,7 @@ final class LineBreakTerminalView: AppTerminalView {
     var bracketedPasteMode = false
     private var terminalColumns = 80
     private var terminalRows = 24
-    private var didApplyGrid = false
     private var viewportBox = TerminalViewportBox()
-    /// Frames that arrived before the real grid was sent. Painted at 80×24
-    /// they would land in a differently sized view and shift a fullscreen TUI.
-    private let pendingFrames = PendingTerminalFrames()
 
     weak var controlDelegate: TerminalControlViewDelegate?
 
@@ -567,23 +324,12 @@ final class LineBreakTerminalView: AppTerminalView {
                 // only other sender; startTerminalSession replays this.
                 viewportBox.store(viewport)
                 Task { @MainActor in
-                    guard let ws = weakSelf else { return }
-                    ws.terminalSession?.resize(viewport)
-                    let columns = max(1, Int(viewport.columns))
-                    let rows = max(1, Int(viewport.rows))
-                    // A pixel-only change leaves the grid alone, so the frame
-                    // already on screen is still the right shape. Holding it
-                    // would freeze the pane for the settle delay. The first
-                    // callback is always treated as a change: the stored 80×24
-                    // is the attach default, not a size the engine has reflowed.
-                    let gridChanged = !ws.didApplyGrid
-                        || columns != ws.terminalColumns
-                        || rows != ws.terminalRows
-                    ws.didApplyGrid = true
-                    ws.terminalColumns = columns
-                    ws.terminalRows = rows
-                    ws.controlDelegate?.sizeChanged(source: ws, newCols: columns, newRows: rows)
-                    if gridChanged { ws.paintFrameOnceSettled() }
+                    weakSelf?.terminalSession?.resize(viewport)
+                    if let ws = weakSelf {
+                        ws.terminalColumns = max(1, Int(viewport.columns))
+                        ws.terminalRows = max(1, Int(viewport.rows))
+                        ws.controlDelegate?.sizeChanged(source: ws, newCols: Int(viewport.columns), newRows: Int(viewport.rows))
+                    }
                 }
             }
         )
@@ -636,12 +382,9 @@ final class LineBreakTerminalView: AppTerminalView {
     ) {
         let session = HerdrTerminalControlProcess()
         let filter = self.colorFilter
-        let pendingFrames = self.pendingFrames
         let terminal = self.inMemorySession
         session.onFrame = { data in
             let outputData = filter.transform(data: data)
-            guard !outputData.isEmpty else { return }
-            guard pendingFrames.accept(outputData) else { return }
             terminal.receive(TerminalFrameBytes.payload(frame: outputData))
         }
         session.onExit = { [weak self, weak session] exitCode, diagnostic in
@@ -674,11 +417,6 @@ final class LineBreakTerminalView: AppTerminalView {
             // into a taller view.
             if let viewport = viewportBox.load() {
                 session.resize(viewport)
-                // Tell the remote the size, but do not paint. The viewport was
-                // stored by a resize callback that runs before the engine
-                // reflows, and the grid it names may already have been
-                // superseded. The frame is painted by that callback's settle
-                // wait, which no-ops once a newer resize has been dispatched.
             }
         } catch {
             NSLog("Failed to start Herdr terminal session: \(error)")
@@ -694,31 +432,6 @@ final class LineBreakTerminalView: AppTerminalView {
     func terminate(signal: Int32 = SIGHUP) {
         terminalSession?.detach(signal: signal)
         terminalSession = nil
-    }
-
-    /// Called from the resize callback, which runs before the engine reflows
-    /// the grid. The frame is written only if no newer resize arrives while
-    /// this one settles; a resize that keeps coming holds the frame until the
-    /// last one does.
-    private func paintFrameOnceSettled() {
-        let session = inMemorySession
-        let pendingFrames = self.pendingFrames
-        let generation = pendingFrames.gridWillChange()
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: Self.gridSettleDelay)
-            Self.paint(pendingFrames.takeSettled(generation), into: session)
-        }
-    }
-
-    /// How long a resize must go unfollowed before its frame is parsed. The
-    /// callback precedes the reflow, and for an alt-screen TUI the host
-    /// throttles the size it reports by up to ~96ms, so the wait has to
-    /// outlast both.
-    private static let gridSettleDelay: UInt64 = 150_000_000
-
-    private static func paint(_ held: Data?, into session: InMemoryTerminalSession) {
-        guard let held else { return }
-        session.receive(TerminalFrameBytes.payload(frame: held))
     }
 
     func send(txt: String) {
